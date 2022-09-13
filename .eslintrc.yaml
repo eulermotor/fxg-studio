@@ -24,7 +24,7 @@ settings:
   import/internal-regex: "^@foxglove"
 
 rules:
-  "@foxglove/license-header": error
+  # "@foxglove/license-header": error
 
   tss-unused-classes/unused-classes: error
 

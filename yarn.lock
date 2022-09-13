@@ -21295,7 +21295,7 @@ __metadata:
     webworkify: ^1.5.0
     ws: ^7.2.1
     xmldom: ^0.6.0
-  checksum: 2efef6e6ecaed7b92ced4e9b92ec09fd7ee056482fb30f9f533b94607b48a184e207c19f2e8de94c333026a24da43882d1aa88b748c5ceb560126155b7b21fed
+  checksum: aa1ef5332ef027e7886e9a1442adc81c0e04fbe470d8e7e37fb7224b658eb6fd4d43ea78819f3b577b6d94d866a4188477558d4d1eb834ccab4156a0aa62f683
   languageName: node
   linkType: hard
 

@@ -119,6 +119,7 @@ function DirectionalPad(props: DirectionalPadProps): JSX.Element {
       fullHeight
       style={{ userSelect: "none" }}
     >
+      <h4>For now we have disabled the buttons, please use the arrow buttons</h4>
       <svg className={classes.svg} viewBox="0 0 256 256">
         <g opacity={1}>
           {/* UP button */}

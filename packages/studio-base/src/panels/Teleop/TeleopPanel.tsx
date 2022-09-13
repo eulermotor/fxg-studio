@@ -16,9 +16,11 @@ import {
 } from "@foxglove/studio";
 import EmptyState from "@foxglove/studio-base/components/EmptyState";
 import Stack from "@foxglove/studio-base/components/Stack";
+import DirectionalPad, {
+  DirectionalPadAction,
+} from "@foxglove/studio-base/panels/Teleop/DirectionalPad";
+import TeleopKeyboardFeature from "@foxglove/studio-base/panels/Teleop/TeleopKeyboardFeature";
 import ThemeProvider from "@foxglove/studio-base/theme/ThemeProvider";
-
-import DirectionalPad, { DirectionalPadAction } from "./DirectionalPad";
 
 type TeleopPanelProps = {
   context: PanelExtensionContext;
@@ -109,12 +111,37 @@ function buildSettingsTree(config: Config, topics: readonly Topic[]): SettingsTr
   return { general };
 }
 
+const defaultMessage = (speed?: number, direction?: number) => {
+  return {
+    linear: {
+      x: speed != undefined ? speed : 0, // in case of going forward should be +ve value else -ve
+      y: 0,
+      z: 0,
+    },
+    angular: {
+      x: 0,
+      y: 0,
+      z: direction != undefined ? direction : 0, // turing right +ve else -ve value;
+    },
+  };
+};
+
+/**
+ * ! SOLUTION FOR CONTINOUS TRANSMISSION OF DATA VIA TELEOPERATION
+ * -> we can use a setInterval and transmit values every 500 milisecond for the vehicle if needed.
+ * -> the frequency can be changed and altered if needed.
+ */
+
 function TeleopPanel(props: TeleopPanelProps): JSX.Element {
   const { context } = props;
   const { saveState } = context;
 
-  const [currentAction, setCurrentAction] = useState<DirectionalPadAction | undefined>();
+  const [currentAction, setCurrentAction] = useState<DirectionalPadAction | number>();
+  const [doesVehicleStateChange, setDoesVehicleStateChange] = useState<number>(0);
   const [topics, setTopics] = useState<readonly Topic[]>([]);
+
+  const [_linearVelocity, setLinearVelocity] = useState<number>(0);
+  const [_angularVelocity, setAngularVelocity] = useState<number>(0);
 
   // resolve an initial config which may have some missing fields into a full config
   const [config, setConfig] = useState<Config>(() => {
@@ -200,57 +227,49 @@ function TeleopPanel(props: TeleopPanelProps): JSX.Element {
       return;
     }
 
-    const message = {
-      linear: {
-        x: 0,
-        y: 0,
-        z: 0,
-      },
-      angular: {
-        x: 0,
-        y: 0,
-        z: 0,
-      },
-    };
+    const message = { ...defaultMessage(_linearVelocity, _angularVelocity) };
+    // function setFieldValue(field: string, value: number) {
+    //   switch (field) {
+    //     case "linear-x":
+    //       message.linear.x = value;
+    //       break;
+    //     case "linear-y":
+    //       message.linear.y = value;
+    //       break;
+    //     case "linear-z":
+    //       message.linear.z = value;
+    //       break;
+    //     case "angular-x":
+    //       message.angular.x = value;
+    //       break;
+    //     case "angular-y":
+    //       message.angular.y = value;
+    //       break;
+    //     case "angular-z":
+    //       message.angular.z = value;
+    //       break;
+    //   }
+    // }
 
-    function setFieldValue(field: string, value: number) {
-      switch (field) {
-        case "linear-x":
-          message.linear.x = value;
-          break;
-        case "linear-y":
-          message.linear.y = value;
-          break;
-        case "linear-z":
-          message.linear.z = value;
-          break;
-        case "angular-x":
-          message.angular.x = value;
-          break;
-        case "angular-y":
-          message.angular.y = value;
-          break;
-        case "angular-z":
-          message.angular.z = value;
-          break;
-      }
-    }
-
-    switch (currentAction) {
-      case DirectionalPadAction.UP:
-        setFieldValue(config.upButton.field, config.upButton.value);
-        break;
-      case DirectionalPadAction.DOWN:
-        setFieldValue(config.downButton.field, config.downButton.value);
-        break;
-      case DirectionalPadAction.LEFT:
-        setFieldValue(config.leftButton.field, config.leftButton.value);
-        break;
-      case DirectionalPadAction.RIGHT:
-        setFieldValue(config.rightButton.field, config.rightButton.value);
-        break;
-      default:
-    }
+    // switch (currentAction) {
+    //   case DirectionalPadAction.UP:
+    //     // setFieldValue(config.upButton.field, config.upButton.value);
+    //     setLinearVelocity(config.upButton.value);
+    //     break;
+    //   case DirectionalPadAction.DOWN:
+    //     setLinearVelocity(config.downButton.value);
+    //     // setFieldValue(config.downButton.field, config.downButton.value);
+    //     break;
+    //   case DirectionalPadAction.LEFT:
+    //     setAngularVelocity(config.leftButton.value);
+    //     // setFieldValue(config.leftButton.field, config.leftButton.value);
+    //     break;
+    //   case DirectionalPadAction.RIGHT:
+    //     setAngularVelocity(config.rightButton.value);
+    //     // setFieldValue(config.rightButton.field, config.rightButton.value);
+    //     break;
+    //   default:
+    // }
 
     // don't publish if rate is 0 or negative - this is a config error on user's part
     if (config.publishRate <= 0) {
@@ -266,7 +285,8 @@ function TeleopPanel(props: TeleopPanelProps): JSX.Element {
     return () => {
       clearInterval(intervalHandle);
     };
-  }, [context, config, currentTopic, currentAction]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [context, config, currentTopic, doesVehicleStateChange]);
 
   useLayoutEffect(() => {
     renderDone();
@@ -275,6 +295,17 @@ function TeleopPanel(props: TeleopPanelProps): JSX.Element {
   const canPublish = context.publish != undefined && config.publishRate > 0;
   const hasTopic = Boolean(currentTopic);
   const enabled = canPublish && hasTopic;
+
+  const handleKeyBoardDrivenVehicleMovement = (
+    key: DirectionalPadAction | undefined,
+    linearVelocity: number,
+    angularVelocity: number,
+  ) => {
+    setLinearVelocity(linearVelocity);
+    setAngularVelocity(angularVelocity);
+    setDoesVehicleStateChange(Math.random() * Math.random() * Math.random());
+    setCurrentAction(key);
+  };
 
   return (
     <ThemeProvider isDark={colorScheme === "dark"}>
@@ -293,6 +324,9 @@ function TeleopPanel(props: TeleopPanelProps): JSX.Element {
           <EmptyState>Please select a publish topic in the panel settings</EmptyState>
         )}
         {enabled && <DirectionalPad onAction={setCurrentAction} disabled={!enabled} />}
+        {enabled && (
+          <TeleopKeyboardFeature handleVehicleMovement={handleKeyBoardDrivenVehicleMovement} />
+        )}
       </Stack>
     </ThemeProvider>
   );
