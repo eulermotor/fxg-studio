@@ -114,23 +114,17 @@ function buildSettingsTree(config: Config, topics: readonly Topic[]): SettingsTr
 const defaultMessage = (speed?: number, direction?: number) => {
   return {
     linear: {
-      x: speed != undefined ? speed : 0, // in case of going forward should be +ve value else -ve
+      x: speed != undefined ? speed : 0,
       y: 0,
       z: 0,
     },
     angular: {
       x: 0,
       y: 0,
-      z: direction != undefined ? direction : 0, // turing right +ve else -ve value;
+      z: direction != undefined ? direction : 0,
     },
   };
 };
-
-/**
- * ! SOLUTION FOR CONTINOUS TRANSMISSION OF DATA VIA TELEOPERATION
- * -> we can use a setInterval and transmit values every 500 milisecond for the vehicle if needed.
- * -> the frequency can be changed and altered if needed.
- */
 
 function TeleopPanel(props: TeleopPanelProps): JSX.Element {
   const { context } = props;
@@ -228,49 +222,6 @@ function TeleopPanel(props: TeleopPanelProps): JSX.Element {
     }
 
     const message = { ...defaultMessage(_linearVelocity, _angularVelocity) };
-    // function setFieldValue(field: string, value: number) {
-    //   switch (field) {
-    //     case "linear-x":
-    //       message.linear.x = value;
-    //       break;
-    //     case "linear-y":
-    //       message.linear.y = value;
-    //       break;
-    //     case "linear-z":
-    //       message.linear.z = value;
-    //       break;
-    //     case "angular-x":
-    //       message.angular.x = value;
-    //       break;
-    //     case "angular-y":
-    //       message.angular.y = value;
-    //       break;
-    //     case "angular-z":
-    //       message.angular.z = value;
-    //       break;
-    //   }
-    // }
-
-    // switch (currentAction) {
-    //   case DirectionalPadAction.UP:
-    //     // setFieldValue(config.upButton.field, config.upButton.value);
-    //     setLinearVelocity(config.upButton.value);
-    //     break;
-    //   case DirectionalPadAction.DOWN:
-    //     setLinearVelocity(config.downButton.value);
-    //     // setFieldValue(config.downButton.field, config.downButton.value);
-    //     break;
-    //   case DirectionalPadAction.LEFT:
-    //     setAngularVelocity(config.leftButton.value);
-    //     // setFieldValue(config.leftButton.field, config.leftButton.value);
-    //     break;
-    //   case DirectionalPadAction.RIGHT:
-    //     setAngularVelocity(config.rightButton.value);
-    //     // setFieldValue(config.rightButton.field, config.rightButton.value);
-    //     break;
-    //   default:
-    // }
-
     // don't publish if rate is 0 or negative - this is a config error on user's part
     if (config.publishRate <= 0) {
       return;
@@ -301,6 +252,8 @@ function TeleopPanel(props: TeleopPanelProps): JSX.Element {
     linearVelocity: number,
     angularVelocity: number,
   ) => {
+    // eslint-disable-next-line no-restricted-syntax
+    console.log(linearVelocity, angularVelocity);
     setLinearVelocity(linearVelocity);
     setAngularVelocity(angularVelocity);
     setDoesVehicleStateChange(Math.random() * Math.random() * Math.random());

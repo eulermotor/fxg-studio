@@ -9,6 +9,7 @@ import { DirectionalPadAction } from "@foxglove/studio-base/panels/Teleop/Direct
 import {
   ACCELERATION_SENITIVITY,
   BASE_KICKSTART_FROM_REST,
+  BREAKING_INTERVAL,
   BREAK_SENSITIVITY,
   FRONT_MAX_SPEED,
   KEYS,
@@ -54,11 +55,10 @@ function TeleopKeyboardFeature(props: TeleopKeyboardFeatureProps): JSX.Element {
     };
 
     const keyUpHandler = (event: { keyCode: number }) => {
-      setCurrentKey(-1); // it stays undefined and not state change happens!!
-      // should it be continous emitssion of the data or still make it event bound!!
+      setCurrentKey(-1);
       if (event.keyCode === KEYS.TOP || event.keyCode === KEYS.DOWN) {
         bringRobotToRest();
-      } else if (event.keyCode === 37 || event.keyCode === 39) {
+      } else if (event.keyCode === KEYS.LEFT || event.keyCode === KEYS.RIGHT) {
         makeRobotDirectionStraight();
       }
     };
@@ -66,28 +66,28 @@ function TeleopKeyboardFeature(props: TeleopKeyboardFeatureProps): JSX.Element {
     const keyDownHandler = (event: { keyCode: number }) => {
       if (event.keyCode === KEYS.TOP) {
         increaseSpeed();
-        setCurrentKey(DirectionalPadAction.UP);
+        setCurrentKey(KEYS.TOP);
       } else if (event.keyCode === KEYS.DOWN) {
         decreaseSpeed();
-        setCurrentKey(DirectionalPadAction.DOWN);
+        setCurrentKey(KEYS.DOWN);
       } else if (event.keyCode === KEYS.LEFT) {
         turnRight();
-        setCurrentKey(DirectionalPadAction.RIGHT);
+        setCurrentKey(KEYS.RIGHT);
       } else if (event.keyCode === KEYS.RIGHT) {
         turnLeft();
-        setCurrentKey(DirectionalPadAction.LEFT);
+        setCurrentKey(KEYS.LEFT);
       }
     };
 
     const increaseSpeed = () => {
-      if (linearVelocity > FRONT_MAX_SPEED) {
+      if (linearVelocity >= FRONT_MAX_SPEED) {
         setLinearVelocity(FRONT_MAX_SPEED);
         return;
       }
 
       if (linearVelocity < 0) {
         // increase speed towards positive end
-        if (linearVelocity > -REST_THRESHOLD) {
+        if (linearVelocity >= -REST_THRESHOLD) {
           // bring vehicle to rest mode
           setLinearVelocity(0);
           return;
@@ -103,7 +103,7 @@ function TeleopKeyboardFeature(props: TeleopKeyboardFeatureProps): JSX.Element {
 
     const decreaseSpeed = () => {
       // ! reverse mode is handled with negetive values, comparision operators are opposite.
-      if (linearVelocity < REVERSE_MAX_SPEED) {
+      if (linearVelocity <= REVERSE_MAX_SPEED) {
         setLinearVelocity(REVERSE_MAX_SPEED);
         return;
       }
@@ -123,15 +123,16 @@ function TeleopKeyboardFeature(props: TeleopKeyboardFeatureProps): JSX.Element {
 
     const turnRight = () => {
       // right max speed : +1
-      // analogus to increase speed. we increment the value by turning factor.
-      if (angularVelocity > RIGHT_MAX_TURN) {
+      if (angularVelocity >= RIGHT_MAX_TURN) {
         setAngularVelocity(RIGHT_MAX_TURN);
         return;
       }
 
       if (angularVelocity < 0) {
-        // left max speed : -1
-        // vehicle turning left, bring it right.
+        if (angularVelocity >= -REST_THRESHOLD) {
+          setAngularVelocity(0);
+          return;
+        }
         setAngularVelocity(angularVelocity / TURNING_SENSITIVITY);
       } else if (angularVelocity === 0) {
         // activate right movement;
@@ -144,13 +145,17 @@ function TeleopKeyboardFeature(props: TeleopKeyboardFeatureProps): JSX.Element {
 
     const turnLeft = () => {
       // analogus to decrease speed. we decrement the value by turning factor.
-      if (angularVelocity < LEFT_MAX_TURN) {
+      if (angularVelocity <= LEFT_MAX_TURN) {
         setAngularVelocity(LEFT_MAX_TURN);
         return;
       }
 
       if (angularVelocity > 0) {
         // vehicle turning left, bring it right.
+        if (angularVelocity < REST_THRESHOLD) {
+          setAngularVelocity(0);
+          return;
+        }
         setAngularVelocity(angularVelocity / TURNING_SENSITIVITY);
       } else if (angularVelocity === 0) {
         // activate right movement;
@@ -162,6 +167,11 @@ function TeleopKeyboardFeature(props: TeleopKeyboardFeatureProps): JSX.Element {
     };
 
     const bringRobotToRest = () => {
+      if (currentKey === KEYS.DOWN || currentKey === KEYS.TOP) {
+        return;
+      }
+      // eslint-disable-next-line no-restricted-syntax
+      console.log("[SMART] - bringing it to rest", currentKey);
       const timeOut = setTimeout(() => {
         if (
           (linearVelocity < REST_THRESHOLD && linearVelocity > 0) ||
@@ -174,11 +184,16 @@ function TeleopKeyboardFeature(props: TeleopKeyboardFeatureProps): JSX.Element {
         setLinearVelocity(linearVelocity / BREAK_SENSITIVITY);
         setCurrentKey(currentKey - 1);
         bringRobotToRest();
-      }, 300);
+      }, BREAKING_INTERVAL);
       timeout.linear.push(timeOut);
     };
 
     const makeRobotDirectionStraight = () => {
+      if (currentKey === KEYS.LEFT || currentKey === KEYS.RIGHT) {
+        return;
+      }
+      // eslint-disable-next-line no-restricted-syntax
+      console.log("[SMART] - straighten", currentKey);
       const timeOut = setTimeout(() => {
         if (
           (angularVelocity < REST_THRESHOLD && angularVelocity > 0) ||
@@ -191,7 +206,7 @@ function TeleopKeyboardFeature(props: TeleopKeyboardFeatureProps): JSX.Element {
         setAngularVelocity(angularVelocity / TURNING_SENSITIVITY);
         setCurrentKey(currentKey - 1);
         makeRobotDirectionStraight();
-      }, 300);
+      }, BREAKING_INTERVAL);
       timeout.angular.push(timeOut);
     };
 
