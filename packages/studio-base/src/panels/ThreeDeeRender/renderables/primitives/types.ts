@@ -7,6 +7,10 @@ export enum PrimitiveType {
   MODELS = "MODELS",
   LINES = "LINES",
   CYLINDERS = "CYLINDERS",
+  ARROWS = "ARROWS",
+  SPHERES = "SPHERES",
+  TEXTS = "TEXTS",
+  TRIANGLES = "TRIANGLES",
 }
 
 export const ALL_PRIMITIVE_TYPES = [
@@ -14,4 +18,8 @@ export const ALL_PRIMITIVE_TYPES = [
   PrimitiveType.MODELS,
   PrimitiveType.LINES,
   PrimitiveType.CYLINDERS,
+  PrimitiveType.ARROWS,
+  PrimitiveType.SPHERES,
+  PrimitiveType.TEXTS,
+  PrimitiveType.TRIANGLES,
 ];

@@ -3,11 +3,15 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
 import type { Renderer } from "../../Renderer";
+import { RenderableArrows } from "./RenderableArrows";
 import { RenderableCubes } from "./RenderableCubes";
 import { RenderableCylinders } from "./RenderableCylinders";
 import { RenderableLines } from "./RenderableLines";
 import { RenderableModels } from "./RenderableModels";
 import { RenderablePrimitive } from "./RenderablePrimitive";
+import { RenderableSpheres } from "./RenderableSpheres";
+import { RenderableTexts } from "./RenderableTexts";
+import { RenderableTriangles } from "./RenderableTriangles";
 import { PrimitiveType } from "./types";
 
 const CONSTRUCTORS = {
@@ -15,6 +19,10 @@ const CONSTRUCTORS = {
   [PrimitiveType.MODELS]: RenderableModels,
   [PrimitiveType.LINES]: RenderableLines,
   [PrimitiveType.CYLINDERS]: RenderableCylinders,
+  [PrimitiveType.ARROWS]: RenderableArrows,
+  [PrimitiveType.SPHERES]: RenderableSpheres,
+  [PrimitiveType.TEXTS]: RenderableTexts,
+  [PrimitiveType.TRIANGLES]: RenderableTriangles,
 };
 
 /**

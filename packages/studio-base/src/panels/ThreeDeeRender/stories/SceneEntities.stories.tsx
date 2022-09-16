@@ -9,6 +9,7 @@ import tinycolor from "tinycolor2";
 
 import { FrameTransform, LineType, SceneUpdate } from "@foxglove/schemas/schemas/typescript";
 import { MessageEvent, Topic } from "@foxglove/studio";
+import { ColorRGBA } from "@foxglove/studio-base/panels/ThreeDeeRender/ros";
 import { xyzrpyToPose } from "@foxglove/studio-base/panels/ThreeDeeRender/transforms";
 import PanelSetup from "@foxglove/studio-base/stories/PanelSetup";
 
@@ -18,6 +19,27 @@ import { makeColor, QUAT_IDENTITY, rad2deg } from "./common";
 export default {
   title: "panels/ThreeDeeRender/SceneEntities",
   component: ThreeDeeRender,
+};
+
+const icospherePointsAndIndices = {
+  points: [
+    { x: 0, y: 0.15771933363574006, z: 0.255195242505612 },
+    { x: 0, y: -0.15771933363574006, z: 0.255195242505612 },
+    { x: 0.15771933363574006, y: 0.255195242505612, z: 0 },
+    { x: -0.15771933363574006, y: 0.255195242505612, z: 0 },
+    { x: 0.255195242505612, y: 0, z: 0.15771933363574006 },
+    { x: -0.255195242505612, y: 0, z: 0.15771933363574006 },
+    { x: 0, y: -0.15771933363574006, z: -0.255195242505612 },
+    { x: 0, y: 0.15771933363574006, z: -0.255195242505612 },
+    { x: -0.15771933363574006, y: -0.255195242505612, z: 0 },
+    { x: 0.15771933363574006, y: -0.255195242505612, z: 0 },
+    { x: -0.255195242505612, y: 0, z: -0.15771933363574006 },
+    { x: 0.255195242505612, y: 0, z: -0.15771933363574006 },
+  ],
+  indices: [
+    0, 5, 1, 0, 3, 5, 0, 2, 3, 0, 4, 2, 0, 1, 4, 1, 5, 8, 5, 3, 10, 3, 2, 7, 2, 4, 11, 4, 1, 9, 7,
+    11, 6, 11, 9, 6, 9, 8, 6, 8, 10, 6, 10, 7, 6, 2, 11, 7, 4, 9, 11, 1, 8, 9, 5, 10, 8, 3, 7, 10,
+  ],
 };
 
 function makeStoryScene({
@@ -53,7 +75,24 @@ function makeStoryScene({
           frame_locked: true,
           metadata: [],
 
-          arrows: [],
+          arrows: [
+            {
+              pose: xyzrpyToPose([0, 4, 0], [0, 0, 0]),
+              shaft_diameter: 0.5,
+              shaft_length: 0.5,
+              head_diameter: 1,
+              head_length: 0.3,
+              color: makeColor("#f4b136", 0.5),
+            },
+            {
+              pose: xyzrpyToPose([1, 4, 0], [0, 0, 30]),
+              shaft_diameter: 0.5,
+              shaft_length: 0.5,
+              head_diameter: 1,
+              head_length: 0.3,
+              color: makeColor("#afe663", 0.9),
+            },
+          ],
 
           cubes: [
             {
@@ -68,7 +107,18 @@ function makeStoryScene({
             },
           ],
 
-          spheres: [],
+          spheres: [
+            {
+              pose: xyzrpyToPose([0, 6, 0], [0, 0, 0]),
+              size: { x: 0.8, y: 0.5, z: 1 },
+              color: makeColor("#ff6136", 0.5),
+            },
+            {
+              pose: xyzrpyToPose([1, 6, 0], [0, 0, 30]),
+              size: { x: 0.4, y: 0.2, z: 1 },
+              color: makeColor("#afe6c3", 0.9),
+            },
+          ],
 
           cylinders: [
             {
@@ -170,9 +220,68 @@ function makeStoryScene({
             },
           ]),
 
-          triangles: [],
+          triangles: [
+            {
+              ...icospherePointsAndIndices,
+              pose: xyzrpyToPose([0, 9, 0], [0.5685618507342682, 0, 0]),
+              color: makeColor("#ff0048", 1.0),
+              colors: [],
+            },
+            {
+              ...icospherePointsAndIndices,
+              pose: xyzrpyToPose([1, 9, 0], [0.5685618507342682, 0, 0]),
+              color: makeColor("#ff0048", 0.5),
+              colors: [
+                { r: 1, g: 0, b: 0, a: 0 },
+                { r: 1, g: 0.6000000000000001, b: 0, a: 0.1 },
+                { r: 0.7999999999999998, g: 1, b: 0, a: 0.2 },
+                { r: 0.20000000000000018, g: 1, b: 0, a: 0.3 },
+                { r: 0, g: 1, b: 0.40000000000000036, a: 0.4 },
+                { r: 0, g: 1, b: 1, a: 0.5 },
+                { r: 0, g: 0.40000000000000036, b: 1, a: 0.6 },
+                { r: 0.1999999999999993, g: 0, b: 1, a: 0.7 },
+                { r: 0.8000000000000007, g: 0, b: 1, a: 0.8 },
+                { r: 1, g: 0, b: 0.5999999999999996, a: 0.9 },
+                { r: 1, g: 0, b: 0, a: 1 },
+                { r: 1, g: 0.6000000000000005, b: 0, a: 1.1 },
+              ] as ColorRGBA[],
+            },
+          ],
 
-          texts: [],
+          texts: [
+            {
+              pose: xyzrpyToPose([0, 7, 0], [0, 0, 0]),
+              color: makeColor("#f6f136", 0.5),
+              font_size: 0.2,
+              text: "3d size",
+              scale_invariant: false,
+              billboard: true,
+            },
+            {
+              pose: xyzrpyToPose([1, 7, 0], [0, 0, 30]),
+              color: makeColor("#ae6fc3", 0.9),
+              font_size: 10,
+              text: "pixel size",
+              scale_invariant: true,
+              billboard: true,
+            },
+            {
+              pose: xyzrpyToPose([0, 8, 0], [0, 0, 0]),
+              color: makeColor("#f6f136", 0.5),
+              font_size: 0.2,
+              text: "scale invariant false",
+              scale_invariant: false,
+              billboard: false,
+            },
+            {
+              pose: xyzrpyToPose([1, 8, 0], [0, 0, 30]),
+              color: makeColor("#ae6fc3", 0.9),
+              font_size: 0.2,
+              text: "scale invariant true",
+              scale_invariant: true,
+              billboard: false,
+            },
+          ],
 
           models: [
             {
@@ -274,8 +383,8 @@ export function BasicEntities(): JSX.Element {
           cameraState: {
             distance: 12,
             perspective: true,
-            phi: 30,
-            targetOffset: [0, -2, 0],
+            phi: 40,
+            targetOffset: [0, 0, 0],
             thetaOffset: rad2deg(-0.25),
             fovy: 45,
             near: 0.01,
