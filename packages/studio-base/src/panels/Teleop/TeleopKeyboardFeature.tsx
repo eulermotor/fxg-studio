@@ -71,11 +71,11 @@ function TeleopKeyboardFeature(props: TeleopKeyboardFeatureProps): JSX.Element {
         decreaseSpeed();
         setCurrentKey(KEYS.DOWN);
       } else if (event.keyCode === KEYS.LEFT) {
-        turnRight();
-        setCurrentKey(KEYS.RIGHT);
-      } else if (event.keyCode === KEYS.RIGHT) {
         turnLeft();
         setCurrentKey(KEYS.LEFT);
+      } else if (event.keyCode === KEYS.RIGHT) {
+        turnRight();
+        setCurrentKey(KEYS.RIGHT);
       }
     };
 

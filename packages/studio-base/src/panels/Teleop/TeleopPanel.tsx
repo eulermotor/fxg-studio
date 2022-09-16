@@ -19,7 +19,12 @@ import Stack from "@foxglove/studio-base/components/Stack";
 import DirectionalPad, {
   DirectionalPadAction,
 } from "@foxglove/studio-base/panels/Teleop/DirectionalPad";
+import JoyStickController from "@foxglove/studio-base/panels/Teleop/JoyStickController";
 import TeleopKeyboardFeature from "@foxglove/studio-base/panels/Teleop/TeleopKeyboardFeature";
+import {
+  DEFAULT_TELEOP_MODE,
+  TELEOPERATION_MODES,
+} from "@foxglove/studio-base/panels/Teleop/constants";
 import ThemeProvider from "@foxglove/studio-base/theme/ThemeProvider";
 
 type TeleopPanelProps = {
@@ -42,11 +47,14 @@ type Config = {
   downButton: { field: string; value: number };
   leftButton: { field: string; value: number };
   rightButton: { field: string; value: number };
+  defaultOperatingMode: { field: string; value: string };
+  operationModeOptions: { field: string; value: string[] };
 };
 
 function buildSettingsTree(config: Config, topics: readonly Topic[]): SettingsTreeNodes {
   const general: SettingsTreeNode = {
     label: "General",
+    defaultExpansionState: "expanded",
     fields: {
       publishRate: { label: "Publish Rate", input: "number", value: config.publishRate },
       topic: {
@@ -108,7 +116,19 @@ function buildSettingsTree(config: Config, topics: readonly Topic[]): SettingsTr
     },
   };
 
-  return { general };
+  const operationMode: SettingsTreeNode = {
+    label: "Vehicle handling mode",
+    fields: {
+      teleopOperationMode: {
+        label: "Operation mode",
+        input: "select",
+        value: config.defaultOperatingMode.value,
+        options: config.operationModeOptions.value.map((topic) => ({ label: topic, value: topic })),
+      },
+    },
+    defaultExpansionState: "expanded",
+  };
+  return { general, operationMode };
 }
 
 const defaultMessage = (speed?: number, direction?: number) => {
@@ -148,6 +168,14 @@ function TeleopPanel(props: TeleopPanelProps): JSX.Element {
       downButton: { field: downField = "linear-x", value: downValue = -1 } = {},
       leftButton: { field: leftField = "angular-z", value: leftValue = 1 } = {},
       rightButton: { field: rightField = "angular-z", value: rightValue = -1 } = {},
+      defaultOperatingMode: {
+        field: defaultField = DEFAULT_TELEOP_MODE,
+        value: defaultValue = DEFAULT_TELEOP_MODE,
+      } = {},
+      operationModeOptions: {
+        field: optionsField = "options",
+        value: optionsValue = TELEOPERATION_MODES,
+      } = {},
     } = partialConfig;
 
     return {
@@ -157,6 +185,8 @@ function TeleopPanel(props: TeleopPanelProps): JSX.Element {
       downButton: { field: downField, value: downValue },
       leftButton: { field: leftField, value: leftValue },
       rightButton: { field: rightField, value: rightValue },
+      defaultOperatingMode: { field: defaultField, value: defaultValue },
+      operationModeOptions: { field: optionsField, value: optionsValue },
     };
   });
 
@@ -247,13 +277,13 @@ function TeleopPanel(props: TeleopPanelProps): JSX.Element {
   const hasTopic = Boolean(currentTopic);
   const enabled = canPublish && hasTopic;
 
-  const handleKeyBoardDrivenVehicleMovement = (
+  const vehicleMotionChangeHandler = (
     key: DirectionalPadAction | undefined,
     linearVelocity: number,
     angularVelocity: number,
   ) => {
     // eslint-disable-next-line no-restricted-syntax
-    console.log(linearVelocity, angularVelocity);
+    console.log("[publish] - ", linearVelocity, angularVelocity);
     setLinearVelocity(linearVelocity);
     setAngularVelocity(angularVelocity);
     setDoesVehicleStateChange(Math.random() * Math.random() * Math.random());
@@ -273,13 +303,14 @@ function TeleopPanel(props: TeleopPanelProps): JSX.Element {
             Please connect to a datasource that supports publishing in order to use this panel
           </EmptyState>
         )}
+
         {canPublish && !hasTopic && (
           <EmptyState>Please select a publish topic in the panel settings</EmptyState>
         )}
+
         {enabled && <DirectionalPad onAction={setCurrentAction} disabled={!enabled} />}
-        {enabled && (
-          <TeleopKeyboardFeature handleVehicleMovement={handleKeyBoardDrivenVehicleMovement} />
-        )}
+        {enabled && <TeleopKeyboardFeature handleVehicleMovement={vehicleMotionChangeHandler} />}
+        {enabled && <JoyStickController handleVehicleMovement={vehicleMotionChangeHandler} />}
       </Stack>
     </ThemeProvider>
   );

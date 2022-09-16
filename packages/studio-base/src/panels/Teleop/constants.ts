@@ -18,3 +18,10 @@ export const KEYS = {
 };
 
 export const BREAKING_INTERVAL = 100;
+
+export const DEFAULT_TELEOP_MODE = "Joystick";
+export const TELEOPERATION_MODES = ["Joystick"];
+
+export const JOYSTICK_CHANGE_THRESHOLD = 0.0;
+
+export const JOYSTICK_REST_THRESHOLD = 0.2;
