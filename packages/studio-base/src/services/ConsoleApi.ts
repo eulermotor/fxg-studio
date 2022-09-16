@@ -4,6 +4,8 @@
 
 import * as base64 from "@protobufjs/base64";
 
+import { add, fromNanoSec, Time, toSec } from "@foxglove/rostime";
+
 type User = {
   id: string;
   email: string;
@@ -54,7 +56,11 @@ export type ConsoleEvent = {
   createdAt: string;
   deviceId: string;
   durationNanos: string;
+  endTime: Time;
+  endTimeInSeconds: number;
   metadata: Record<string, string>;
+  startTime: Time;
+  startTimeInSeconds: number;
   timestampNanos: string;
   updatedAt: string;
 };
@@ -174,12 +180,33 @@ class ConsoleApi {
     return await this.get<DeviceResponse>(`/v1/devices/${id}`);
   }
 
+  public async createEvent(params: {
+    deviceId: string;
+    timestamp: string;
+    durationNanos: string;
+    metadata: Record<string, string>;
+  }): Promise<ConsoleEvent> {
+    const rawEvent = await this.post<ConsoleEvent>(`/beta/device-events`, params);
+    return rawEvent;
+  }
+
   public async getEvents(params: {
     deviceId: string;
     start: string;
     end: string;
   }): Promise<EventsResponse> {
-    return await this.get<EventsResponse>(`/beta/device-events`, params);
+    const rawEvents = await this.get<EventsResponse>(`/beta/device-events`, params);
+    return rawEvents.map((event) => {
+      const startTime = fromNanoSec(BigInt(event.timestampNanos));
+      const endTime = add(startTime, fromNanoSec(BigInt(event.durationNanos)));
+      return {
+        ...event,
+        endTime,
+        endTimeInSeconds: toSec(endTime),
+        startTime,
+        startTimeInSeconds: toSec(startTime),
+      };
+    });
   }
 
   public async getLayouts(options: { includeData: boolean }): Promise<readonly ConsoleApiLayout[]> {
