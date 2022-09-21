@@ -49,8 +49,8 @@ function JoyStickController(props: JoystickControllerProps): JSX.Element {
         return;
       }
 
-      let linear = newGamepad && newGamepad.axes ? newGamepad.axes[3] : 0;
-      let angular = newGamepad && newGamepad.axes ? newGamepad.axes[2] : 0;
+      let linear = newGamepad && newGamepad.axes ? newGamepad.axes[1] : 0;
+      let angular = newGamepad && newGamepad.axes ? newGamepad.axes[0] : 0;
 
       linear = linear ? -parseFloat(linear.toFixed(2)) : 0;
       angular = angular ? parseFloat(angular.toFixed(2)) : 0;
