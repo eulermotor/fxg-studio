@@ -6,7 +6,7 @@
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 import { DirectionalPadAction } from "@foxglove/studio-base/panels/Teleop/DirectionalPad";
 import { JOYSTICK_CHANGE_THRESHOLD } from "@foxglove/studio-base/panels/Teleop/constants";
@@ -21,10 +21,11 @@ type JoystickControllerProps = {
 
 function JoyStickController(props: JoystickControllerProps): JSX.Element {
   const { handleVehicleMovement } = props;
-  const [linearVelocity, setLinearVelocity] = useState<number>(0);
-  const [angularVeclocity, setAngularVeclocity] = useState<number>(0);
 
-  const joyStickDetected: boolean = false;
+  let linearVelocity: number = 0,
+    angularVelocity: number = 0;
+  const setLinearVelocity = (val: number) => (linearVelocity = val);
+  const setAngularVelocity = (val: number) => (angularVelocity = val);
 
   useEffect(() => {
     const didChange = (Ov: number, Nv: number): boolean => {
@@ -32,13 +33,10 @@ function JoyStickController(props: JoystickControllerProps): JSX.Element {
     };
 
     const handleDedulication = (Lv: number, Av: number): void => {
-      if (didChange(linearVelocity, Lv)) {
+      if (didChange(angularVelocity, Av) || didChange(linearVelocity, Lv)) {
+        setAngularVelocity(Av);
         setLinearVelocity(Lv);
-        handleVehicleMovement(1, Lv, angularVeclocity);
-      }
-      if (didChange(angularVeclocity, Av)) {
-        setAngularVeclocity(Av);
-        handleVehicleMovement(1, linearVelocity, Av);
+        handleVehicleMovement(1, Lv, Av);
       }
     };
 
@@ -58,28 +56,11 @@ function JoyStickController(props: JoystickControllerProps): JSX.Element {
       handleDedulication(linear, angular);
     })();
 
+    return () => {};
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return (
-    <>
-      {joyStickDetected && (
-        <div>
-          <h2>Connected joystick</h2>
-          <p>Please use the right joystick on Logitech joystick for moving the robot.</p>
-        </div>
-      )}
-
-      {!joyStickDetected && (
-        <div>
-          <h3>Please consider connecting joystick</h3>
-          <button className="" onClick={() => window.location.reload()}>
-            Retry Connection
-          </button>
-        </div>
-      )}
-    </>
-  );
+  return <></>;
 }
 
 export default JoyStickController;
