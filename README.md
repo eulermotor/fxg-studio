@@ -50,15 +50,14 @@ Note: All contributors must agree to our [Contributor License Agreement](https:/
 
 **Dependencies:**
 
-- [Node.js](https://nodejs.org/en/) v14+
-- [Yarn](https://yarnpkg.com/getting-started/install) – `npm install -g yarn`
+- [Node.js](https://nodejs.org/en/) v16.10+
 - [Git LFS](https://git-lfs.github.com/)
 - [Visual Studio Code](https://code.visualstudio.com/) – Recommended
 
 **Getting started:**
 
 1. Clone repo
-1. Run `yarn install`
+1. Run `corepack enable` and `yarn install`
 1. Launch the development environment:
 
 ```sh

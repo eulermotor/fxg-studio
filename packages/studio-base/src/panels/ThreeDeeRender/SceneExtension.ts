@@ -56,10 +56,7 @@ export class SceneExtension<
   public readonly renderables = new Map<string, TRenderable>();
 
   private _settingsUpdateDebounced = debounce(
-    () => {
-      this.renderer.settings.setNodesForKey(this.extensionId, this.settingsNodes());
-      this.renderer.syncSettingsTree();
-    },
+    () => this.renderer.settings.setNodesForKey(this.extensionId, this.settingsNodes()),
     SETTINGS_DEBOUNCE_MS,
     { leading: true, trailing: true, maxWait: SETTINGS_DEBOUNCE_MS },
   );
@@ -72,7 +69,10 @@ export class SceneExtension<
     super();
     this.extensionId = this.name = extensionId;
     this.renderer = renderer;
-    this.updateSettingsTree();
+    // updateSettingsTree() will call settingsNodes() which may be overridden in a child class.
+    // The child class may not assign its members until after this constructor returns. This breaks
+    // type assumptions, so we need to defer the call to updateSettingsTree()
+    queueMicrotask(() => this.updateSettingsTree());
   }
 
   /**
