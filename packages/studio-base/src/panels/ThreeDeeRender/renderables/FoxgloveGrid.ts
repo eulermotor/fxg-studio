@@ -13,6 +13,7 @@ import {
   ColorModeSettings,
   getColorConverter,
   autoSelectColorField,
+  NEEDS_MIN_MAX,
 } from "@foxglove/studio-base/panels/ThreeDeeRender/renderables/pointClouds/colors";
 import type { RosValue } from "@foxglove/studio-base/players/types";
 
@@ -37,9 +38,8 @@ const INVALID_FOXGLOVE_GRID = "INVALID_FOXGLOVE_GRID";
 
 const DEFAULT_COLOR_MAP = "turbo";
 const DEFAULT_FLAT_COLOR = { r: 1, g: 1, b: 1, a: 1 };
-const DEFAULT_MIN_COLOR = { r: 100, g: 47, b: 105, a: 1 };
-const DEFAULT_MAX_COLOR = { r: 227, g: 177, b: 135, a: 1 };
-const SKIP_MIN_MAX = ["flat", "rgb", "rgba"];
+const DEFAULT_MIN_COLOR = { r: 100 / 255, g: 47 / 255, b: 105 / 255, a: 1 };
+const DEFAULT_MAX_COLOR = { r: 227 / 255, g: 177 / 255, b: 135 / 255, a: 1 };
 const DEFAULT_RGB_BYTE_ORDER = "rgba";
 
 const DEFAULT_SETTINGS: LayerSettingsFoxgloveGrid = {
@@ -100,9 +100,15 @@ export class FoxgloveGrid extends SceneExtension<FoxgloveGridRenderable> {
       if (GRID_DATATYPES.has(topic.schemaName)) {
         const config = (configTopics[topic.name] ?? {}) as Partial<LayerSettingsFoxgloveGrid>;
 
-        const node = baseColorModeSettingsNode(this.fieldsByTopic, config, topic, DEFAULT_SETTINGS);
+        const node = baseColorModeSettingsNode(
+          this.fieldsByTopic.get(topic.name) ?? [],
+          config,
+          topic,
+          DEFAULT_SETTINGS,
+          { supportsRgbModes: true },
+        );
         node.icon = "Cells";
-        node.fields!.frameLocked = {
+        node.fields.frameLocked = {
           label: "Frame lock",
           input: "boolean",
           value: config.frameLocked ?? DEFAULT_SETTINGS.frameLocked,
@@ -270,18 +276,22 @@ export class FoxgloveGrid extends SceneExtension<FoxgloveGridRenderable> {
     renderable.userData.messageTime = toNanoSec(foxgloveGrid.timestamp);
     renderable.userData.frameId = this.renderer.normalizeFrameId(foxgloveGrid.frame_id);
     if (foxgloveGrid.fields.length === 0) {
-      invalidFoxgloveGridError(
-        this.renderer,
-        renderable,
-        `Foxglove grid from topic ${renderable.userData.topic} has no fields to color by`,
-      );
+      invalidFoxgloveGridError(this.renderer, renderable, `Grid has no fields to color by`);
       return;
     }
-    const { cell_stride } = foxgloveGrid;
-    const { cols, rows } = getFoxgloveGridDimensions(foxgloveGrid);
-    const size = cols * rows * foxgloveGrid.cell_stride;
-    if (foxgloveGrid.data.length !== size) {
-      const message = `FoxgloveGrid data length (${foxgloveGrid.data.length}) is not equal to cols ${cols} * rows ${rows} * cell_stride ${cell_stride}`;
+    const { cell_stride, row_stride, column_count: cols } = foxgloveGrid;
+    const rows = foxgloveGrid.data.byteLength / row_stride;
+
+    if (Math.floor(cols) !== cols || Math.floor(rows) !== rows) {
+      const message = `Grid column count (${foxgloveGrid.column_count}) or row count (${rows} = data.byteLength ${foxgloveGrid.data.byteLength} / row_stride ${row_stride}) is not an integer.`;
+      invalidFoxgloveGridError(this.renderer, renderable, message);
+      return;
+    }
+
+    if (cell_stride * cols > row_stride) {
+      const message = `Grid row_stride (${row_stride}) does not allow for requisite column_count (${cols}) with cell stride (${cell_stride}). Minimum requisite bytes in row_stride needed: (${
+        cols * cell_stride
+      }) `;
       invalidFoxgloveGridError(this.renderer, renderable, message);
       return;
     }
@@ -291,7 +301,6 @@ export class FoxgloveGrid extends SceneExtension<FoxgloveGridRenderable> {
 
     const data = foxgloveGrid.data;
     const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-    const cellCount = rows * cols;
 
     // Iterate the grid data to determine min/max color values (if needed)
     minMaxColorValues(
@@ -317,20 +326,23 @@ export class FoxgloveGrid extends SceneExtension<FoxgloveGridRenderable> {
     const [minColorValue, maxColorValue] = tempMinMaxColor;
     const { fieldReader } = tempFieldReader;
     const colorConverter = getColorConverter(settings, minColorValue, maxColorValue);
-    for (let i = 0; i < cellCount; i++) {
-      const offset = i * foxgloveGrid.cell_stride;
-      const colorValue = fieldReader(view, offset);
-      colorConverter(tempColor, colorValue);
-      const rgbaOffset = i * 4;
-      rgba[rgbaOffset + 0] = Math.floor(tempColor.r * 255);
-      rgba[rgbaOffset + 1] = Math.floor(tempColor.g * 255);
-      rgba[rgbaOffset + 2] = Math.floor(tempColor.b * 255);
-      rgba[rgbaOffset + 3] = Math.floor(tempColor.a * 255);
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        const offset = y * foxgloveGrid.row_stride + x * foxgloveGrid.cell_stride;
+        const colorValue = fieldReader(view, offset);
+        colorConverter(tempColor, colorValue);
+        const i = y * cols + x;
+        const rgbaOffset = i * 4;
+        rgba[rgbaOffset + 0] = Math.floor(tempColor.r * 255);
+        rgba[rgbaOffset + 1] = Math.floor(tempColor.g * 255);
+        rgba[rgbaOffset + 2] = Math.floor(tempColor.b * 255);
+        rgba[rgbaOffset + 3] = Math.floor(tempColor.a * 255);
 
-      // We cheat a little with transparency: alpha 0 will be handled by the alphaTest setting, so
-      // we don't need to set material.transparent = true.
-      if (tempColor.a !== 0 && tempColor.a !== 1) {
-        hasTransparency = true;
+        // We cheat a little with transparency: alpha 0 will be handled by the alphaTest setting, so
+        // we don't need to set material.transparent = true.
+        if (tempColor.a !== 0 && tempColor.a !== 1) {
+          hasTransparency = true;
+        }
       }
     }
 
@@ -362,15 +374,10 @@ function invalidFoxgloveGridError(
 ): void {
   renderer.settings.errors.addToTopic(renderable.userData.topic, INVALID_FOXGLOVE_GRID, message);
 }
-function getFoxgloveGridDimensions(grid: Grid) {
-  return {
-    cols: grid.column_count,
-    rows: grid.data.byteLength / grid.row_stride,
-  };
-}
 
 function createTexture(foxgloveGrid: Grid): THREE.DataTexture {
-  const { cols, rows } = getFoxgloveGridDimensions(foxgloveGrid);
+  const { column_count: cols, row_stride } = foxgloveGrid;
+  const rows = foxgloveGrid.data.byteLength / row_stride;
   const size = cols * rows;
   const rgba = new Uint8ClampedArray(size * 4);
   const texture = new THREE.DataTexture(
@@ -491,7 +498,7 @@ function minMaxColorValues(
   settings: LayerSettingsFoxgloveGrid,
   numericType: NumericType,
 ): void {
-  if (SKIP_MIN_MAX.includes(settings.colorMode)) {
+  if (!NEEDS_MIN_MAX.includes(settings.colorMode)) {
     return;
   }
 
