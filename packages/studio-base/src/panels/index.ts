@@ -19,6 +19,7 @@ import mapThumbnail from "./Map/thumbnail.png";
 import NodePlaygroundHelp from "./NodePlayground/index.help.md";
 import nodePlaygroundThumbnail from "./NodePlayground/thumbnail.png";
 import ParametersHelp from "./Parameters/index.help.md";
+import parametersThumbnail from "./Parameters/thumbnail.png";
 import PlaybackPerformanceHelp from "./PlaybackPerformance/index.help.md";
 import PlotHelp from "./Plot/index.help.md";
 import plotThumbnail from "./Plot/thumbnail.png";
@@ -50,14 +51,6 @@ import diagnosticStatusThumbnail from "./diagnostics/thumbnails/diagnostic-statu
 import diagnosticSummaryThumbnail from "./diagnostics/thumbnails/diagnostic-summary.png";
 
 const builtin: PanelInfo[] = [
-  {
-    title: "3D (Legacy)",
-    type: "3D Panel",
-    description: "Display visualization markers and models in a 3D scene.",
-    help: ThreeDimensionalVizHelp,
-    thumbnail: threeDimensionalVizThumbnail,
-    module: async () => await import("./ThreeDimensionalViz"),
-  },
   {
     title: "3D",
     type: "3D",
@@ -128,6 +121,7 @@ const builtin: PanelInfo[] = [
     type: "Parameters",
     description: "Read and set parameters for a data source.",
     help: ParametersHelp,
+    thumbnail: parametersThumbnail,
     module: async () => await import("./Parameters"),
   },
   {
@@ -247,4 +241,15 @@ const legacyPlot: PanelInfo[] = [
   },
 ];
 
-export default { builtin, debug, legacyPlot };
+const legacy3D: PanelInfo[] = [
+  {
+    title: "3D (Legacy)",
+    type: "3D Panel",
+    description: "Display visualization markers and models in a 3D scene.",
+    help: ThreeDimensionalVizHelp,
+    thumbnail: threeDimensionalVizThumbnail,
+    module: async () => await import("./ThreeDimensionalViz"),
+  },
+];
+
+export default { builtin, debug, legacyPlot, legacy3D };

@@ -21,7 +21,7 @@ import { DeepPartial } from "ts-essentials";
 import { useDebouncedCallback } from "use-debounce";
 
 import Logger from "@foxglove/log";
-import { toNanoSec } from "@foxglove/rostime";
+import { Time, toNanoSec } from "@foxglove/rostime";
 import {
   LayoutActions,
   MessageEvent,
@@ -378,7 +378,6 @@ export function ThreeDeeRender({ context }: { context: PanelExtensionContext }):
     return {
       cameraState,
       followMode: partialConfig?.followMode ?? "follow-pose",
-      topicsFilter: partialConfig?.topicsFilter ?? "all",
       followTf: partialConfig?.followTf,
       scene: partialConfig?.scene ?? {},
       transforms,
@@ -387,26 +386,29 @@ export function ThreeDeeRender({ context }: { context: PanelExtensionContext }):
       publish,
     };
   });
-  const configRef = useRef(config);
+  const configRef = useLatest(config);
   const { cameraState } = config;
   const backgroundColor = config.scene.backgroundColor;
 
   const [canvas, setCanvas] = useState<HTMLCanvasElement | ReactNull>(ReactNull);
   const [renderer, setRenderer] = useState<Renderer | undefined>(undefined);
-  useEffect(
-    () => setRenderer(canvas ? new Renderer(canvas, configRef.current) : undefined),
-    [canvas],
-  );
+  const rendererRef = useRef<Renderer | undefined>(undefined);
+  useEffect(() => {
+    const newRenderer = canvas ? new Renderer(canvas, configRef.current) : undefined;
+    setRenderer(newRenderer);
+    rendererRef.current = newRenderer;
+    return () => {
+      rendererRef.current?.dispose();
+      rendererRef.current = undefined;
+    };
+  }, [canvas, configRef, config.scene.transforms?.enablePreloading]);
 
   const [colorScheme, setColorScheme] = useState<"dark" | "light" | undefined>();
   const [topics, setTopics] = useState<ReadonlyArray<Topic> | undefined>();
   const [parameters, setParameters] = useState<ReadonlyMap<string, ParameterValue> | undefined>();
   const [variables, setVariables] = useState<ReadonlyMap<string, VariableValue> | undefined>();
   const [messages, setMessages] = useState<ReadonlyArray<MessageEvent<unknown>> | undefined>();
-  const [preloadedMessages, setPreloadedMessages] = useState<
-    ReadonlyArray<MessageEvent<unknown>> | undefined
-  >();
-  const [currentTime, setCurrentTime] = useState<bigint | undefined>();
+  const [currentTime, setCurrentTime] = useState<Time | undefined>();
   const [didSeek, setDidSeek] = useState<boolean>(false);
 
   const renderRef = useRef({ needsRender: false });
@@ -439,18 +441,6 @@ export function ThreeDeeRender({ context }: { context: PanelExtensionContext }):
     renderer?.addListener("cameraMove", listener);
     return () => void renderer?.removeListener("cameraMove", listener);
   }, [renderer]);
-
-  // Build a map from topic name to datatype
-  const topicsToDatatypes = useMemo(() => {
-    const map = new Map<string, string>();
-    if (!topics) {
-      return map;
-    }
-    for (const topic of topics) {
-      map.set(topic.name, topic.datatype);
-    }
-    return map;
-  }, [topics]);
 
   // Handle user changes in the settings sidebar
   const actionHandler = useCallback(
@@ -534,11 +524,11 @@ export function ThreeDeeRender({ context }: { context: PanelExtensionContext }):
     context.onRender = (renderState: RenderState, done) => {
       ReactDOM.unstable_batchedUpdates(() => {
         if (renderState.currentTime) {
-          setCurrentTime(toNanoSec(renderState.currentTime));
+          setCurrentTime(renderState.currentTime);
         }
 
-        // Increment the seek count if didSeek is set to true, to trigger a
-        // state flush in Renderer
+        // Check if didSeek is set to true to reset the preloadedMessageTime and
+        // trigger a state flush in Renderer
         if (renderState.didSeek === true) {
           setDidSeek(true);
         }
@@ -562,10 +552,6 @@ export function ThreeDeeRender({ context }: { context: PanelExtensionContext }):
         // currentFrame has messages on subscribed topics since the last render call
         deepParseMessageEvents(renderState.currentFrame);
         setMessages(renderState.currentFrame);
-
-        // allFrames has messages on preloaded topics across all frames (as they are loaded)
-        deepParseMessageEvents(renderState.allFrames);
-        setPreloadedMessages(renderState.allFrames);
       });
     };
 
@@ -608,7 +594,7 @@ export function ThreeDeeRender({ context }: { context: PanelExtensionContext }):
       for (const rendererSubscription of topicHandlers.get(topic.name) ?? []) {
         updateSubscriptions(topic.name, rendererSubscription);
       }
-      for (const rendererSubscription of datatypeHandlers.get(topic.datatype) ?? []) {
+      for (const rendererSubscription of datatypeHandlers.get(topic.schemaName) ?? []) {
         updateSubscriptions(topic.name, rendererSubscription);
       }
     }
@@ -647,7 +633,7 @@ export function ThreeDeeRender({ context }: { context: PanelExtensionContext }):
   // Keep the renderer currentTime up to date
   useEffect(() => {
     if (renderer && currentTime != undefined) {
-      renderer.currentTime = currentTime;
+      renderer.currentTime = toNanoSec(currentTime);
       renderRef.current.needsRender = true;
     }
   }, [currentTime, renderer]);
@@ -675,34 +661,11 @@ export function ThreeDeeRender({ context }: { context: PanelExtensionContext }):
     }
 
     for (const message of messages) {
-      const datatype = topicsToDatatypes.get(message.topic);
-      if (!datatype) {
-        continue;
-      }
-
-      renderer.addMessageEvent(message, datatype);
+      renderer.addMessageEvent(message);
     }
 
     renderRef.current.needsRender = true;
-  }, [messages, renderer, topicsToDatatypes]);
-
-  // Handle preloaded messages and render a frame if new messages are available
-  useEffect(() => {
-    if (!renderer || !preloadedMessages) {
-      return;
-    }
-
-    for (const message of preloadedMessages) {
-      const datatype = topicsToDatatypes.get(message.topic);
-      if (!datatype) {
-        continue;
-      }
-
-      renderer.addMessageEvent(message, datatype);
-    }
-
-    renderRef.current.needsRender = true;
-  }, [preloadedMessages, renderer, topicsToDatatypes]);
+  }, [messages, renderer]);
 
   // Update the renderer when the camera moves
   useEffect(() => {

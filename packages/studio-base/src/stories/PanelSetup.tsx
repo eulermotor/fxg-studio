@@ -62,6 +62,8 @@ import { SavedProps, UserNodes } from "@foxglove/studio-base/types/panels";
 
 const log = Logger.getLogger(__filename);
 
+function noop() {}
+
 type Frame = {
   [topic: string]: MessageEvent<unknown>[];
 };
@@ -275,8 +277,8 @@ function UnconnectedPanelSetup(props: UnconnectedProps): JSX.Element | ReactNull
   let dTypes = datatypes;
   if (!dTypes) {
     const dummyDatatypes: RosDatatypes = new Map();
-    for (const { datatype } of topics) {
-      dummyDatatypes.set(datatype, { definitions: [] });
+    for (const { schemaName } of topics) {
+      dummyDatatypes.set(schemaName, { definitions: [] });
     }
     dTypes = dummyDatatypes;
   }
@@ -306,6 +308,9 @@ function UnconnectedPanelSetup(props: UnconnectedProps): JSX.Element | ReactNull
         activeData={activeData}
         progress={progress}
         publish={publish}
+        startPlayback={noop}
+        pausePlayback={noop}
+        seekPlayback={noop}
         setPublishers={setPublishers}
         setSubscriptions={setSubscriptions}
       >
