@@ -161,6 +161,9 @@ export default class FoxgloveWebSocketPlayer implements Player {
           } else if (channel.encoding === "ros1") {
             schemaEncoding = "ros1msg";
             schemaData = new TextEncoder().encode(channel.schema);
+          } else if (channel.encoding === "cdr") {
+            schemaEncoding = "ros2msg";
+            schemaData = new TextEncoder().encode(channel.schema);
           } else {
             throw new Error(`Unsupported encoding ${channel.encoding}`);
           }
@@ -227,7 +230,6 @@ export default class FoxgloveWebSocketPlayer implements Player {
     client.on("message", ({ subscriptionId, timestamp, data }) => {
       if (!this._hasReceivedMessage) {
         this._hasReceivedMessage = true;
-        this._metricsCollector.initialized();
         this._metricsCollector.recordTimeToFirstMsgs();
       }
       const chanInfo = this._resolvedSubscriptionsById.get(subscriptionId);
