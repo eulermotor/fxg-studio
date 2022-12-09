@@ -67,7 +67,7 @@
         "/map": {
           "visible": true,
           "colorField": "color",
-          "colorMode": "rgba",
+          "colorMode": "rgba-fields",
           "colorMap": "turbo",
           "gradient": ["#ffffff", "#000000"]
         },
@@ -360,7 +360,6 @@
   },
   "globalVariables": {},
   "userNodes": {},
-  "linkedGlobalVariables": [],
   "playbackConfig": {
     "speed": 1
   },

@@ -3,23 +3,24 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
 import * as base64 from "@protobufjs/base64";
+import { isEqual } from "lodash";
 import { v4 as uuidv4 } from "uuid";
 
 import { debouncePromise } from "@foxglove/den/async";
 import Log from "@foxglove/log";
 import { parseChannel, ParsedChannel } from "@foxglove/mcap-support";
-import { Time, fromNanoSec, isLessThan, isGreaterThan } from "@foxglove/rostime";
+import { fromNanoSec, isGreaterThan, isLessThan, Time } from "@foxglove/rostime";
 import PlayerProblemManager from "@foxglove/studio-base/players/PlayerProblemManager";
 import {
+  AdvertiseOptions,
   MessageEvent,
   Player,
   PlayerCapabilities,
+  PlayerMetricsCollectorInterface,
+  PlayerPresence,
   PlayerState,
   SubscribePayload,
   Topic,
-  PlayerPresence,
-  PlayerMetricsCollectorInterface,
-  AdvertiseOptions,
   TopicStats,
 } from "@foxglove/studio-base/players/types";
 import { RosDatatypes } from "@foxglove/studio-base/types/RosDatatypes";
@@ -46,7 +47,6 @@ export default class FoxgloveWebSocketPlayer implements Player {
   private _topics?: Topic[]; // Topics as published by the WebSocket.
   private _topicsStats = new Map<string, TopicStats>(); // Topic names to topic statistics.
   private _datatypes?: RosDatatypes; // Datatypes as published by the WebSocket.
-  private _start?: Time; // The time at which we started playing.
   private _parsedMessages: MessageEvent<unknown>[] = []; // Queue of messages that we'll send in next _emitState() call.
   private _receivedBytes: number = 0;
   private _metricsCollector: PlayerMetricsCollectorInterface;
@@ -54,7 +54,13 @@ export default class FoxgloveWebSocketPlayer implements Player {
   private _presence: PlayerPresence = PlayerPresence.NOT_PRESENT;
   private _problems = new PlayerProblemManager();
   private _lastSeekTime = 0;
+
+  /** Earliest time seen */
+  private _startTime?: Time;
+  /** Most recently-seen time */
   private _currentTime?: Time;
+  /** Latest time seen */
+  private _endTime?: Time;
 
   private _unresolvedSubscriptions = new Set<string>();
   private _resolvedSubscriptionsByTopic = new Map<string, SubscriptionId>();
@@ -114,6 +120,9 @@ export default class FoxgloveWebSocketPlayer implements Player {
     client.on("close", (event) => {
       log.info("Connection closed:", event);
       this._presence = PlayerPresence.RECONNECTING;
+      this._startTime = undefined;
+      this._currentTime = undefined;
+      this._endTime = undefined;
 
       for (const topic of this._resolvedSubscriptionsByTopic.keys()) {
         this._unresolvedSubscriptions.add(topic);
@@ -182,7 +191,7 @@ export default class FoxgloveWebSocketPlayer implements Player {
           continue;
         }
         const existingChannel = this._channelsByTopic.get(channel.topic);
-        if (existingChannel) {
+        if (existingChannel && !isEqual(channel, existingChannel.channel)) {
           this._problems.addProblem(`duplicate-topic:${channel.topic}`, {
             severity: "error",
             message: `Multiple channels advertise the same topic: ${channel.topic} (${existingChannel.channel.id} and ${channel.id})`,
@@ -258,8 +267,11 @@ export default class FoxgloveWebSocketPlayer implements Player {
           this._parsedMessages = [];
         }
         this._currentTime = receiveTime;
-        if (!this._start) {
-          this._start = receiveTime;
+        if (!this._startTime || isLessThan(receiveTime, this._startTime)) {
+          this._startTime = receiveTime;
+        }
+        if (!this._endTime || isGreaterThan(receiveTime, this._endTime)) {
+          this._endTime = receiveTime;
         }
         this._parsedMessages.push({
           topic,
@@ -359,8 +371,8 @@ export default class FoxgloveWebSocketPlayer implements Player {
       activeData: {
         messages,
         totalBytesReceived: this._receivedBytes,
-        startTime: this._start ?? ZERO_TIME,
-        endTime: this._currentTime ?? ZERO_TIME,
+        startTime: this._startTime ?? ZERO_TIME,
+        endTime: this._endTime ?? ZERO_TIME,
         currentTime: this._currentTime ?? ZERO_TIME,
         isPlaying: true,
         speed: 1,
@@ -388,10 +400,14 @@ export default class FoxgloveWebSocketPlayer implements Player {
   }
 
   public setSubscriptions(subscriptions: SubscribePayload[]): void {
+    const newTopics = new Set(subscriptions.map(({ topic }) => topic));
+
     if (!this._client || this._closed) {
+      // Remember requested subscriptions so we can retry subscribing when
+      // the client is available.
+      this._unresolvedSubscriptions = newTopics;
       return;
     }
-    const newTopics = new Set(subscriptions.map(({ topic }) => topic));
 
     for (const topic of newTopics) {
       if (!this._resolvedSubscriptionsByTopic.has(topic)) {

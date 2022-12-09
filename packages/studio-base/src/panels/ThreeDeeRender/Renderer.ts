@@ -35,6 +35,7 @@ import type { Renderable } from "./Renderable";
 import { SceneExtension } from "./SceneExtension";
 import { ScreenOverlay } from "./ScreenOverlay";
 import { SettingsManager, SettingsTreeEntry } from "./SettingsManager";
+import { SharedGeometry } from "./SharedGeometry";
 import { CameraState } from "./camera";
 import { DARK_OUTLINE, LIGHT_OUTLINE, stringToRgb } from "./color";
 import { FRAME_TRANSFORM_DATATYPES } from "./foxglove";
@@ -97,7 +98,7 @@ export type RendererEvents = {
   transformTreeUpdated: (renderer: Renderer) => void;
   settingsTreeChange: (renderer: Renderer) => void;
   configChange: (renderer: Renderer) => void;
-  datatypeHandlersChanged: (renderer: Renderer) => void;
+  schemaHandlersChanged: (renderer: Renderer) => void;
   topicHandlersChanged: (renderer: Renderer) => void;
 };
 
@@ -136,6 +137,8 @@ export type RendererConfig = {
       /** Enable transform preloading */
       enablePreloading?: boolean;
     };
+    /** Sync camera with other 3d panels */
+    syncCamera?: boolean;
     /** Toggles visibility of all topics */
     topicsVisible?: boolean;
   };
@@ -274,7 +277,7 @@ export class Renderer extends EventEmitter<RendererEvents> {
   // extensionId -> SceneExtension
   public sceneExtensions = new Map<string, SceneExtension>();
   // datatype -> RendererSubscription[]
-  public datatypeHandlers = new Map<string, RendererSubscription[]>();
+  public schemaHandlers = new Map<string, RendererSubscription[]>();
   // topicName -> RendererSubscription[]
   public topicHandlers = new Map<string, RendererSubscription[]>();
   // layerId -> { action, handler }
@@ -320,15 +323,17 @@ export class Renderer extends EventEmitter<RendererEvents> {
 
   public labelPool = new LabelPool({ fontFamily: fonts.MONOSPACE });
   public markerPool = new MarkerPool(this);
+  public sharedGeometry = new SharedGeometry();
 
   private _prevResolution = new THREE.Vector2();
   private _pickingEnabled = false;
   private _isUpdatingCameraState = false;
   private _animationFrame?: number;
+  private _cameraSyncError: undefined | string;
+  private _devicePixelRatioMediaQuery?: MediaQueryList;
 
   public constructor(canvas: HTMLCanvasElement, config: RendererConfig) {
     super();
-
     // NOTE: Global side effect
     THREE.Object3D.DefaultUp = new THREE.Vector3(0, 0, 1);
 
@@ -424,7 +429,7 @@ export class Renderer extends EventEmitter<RendererEvents> {
 
     this.picker = new Picker(this.gl, this.scene, { debug: DEBUG_PICKING });
 
-    this.selectionBackdrop = new ScreenOverlay();
+    this.selectionBackdrop = new ScreenOverlay(this);
     this.selectionBackdrop.visible = false;
     this.scene.add(this.selectionBackdrop);
 
@@ -441,20 +446,20 @@ export class Renderer extends EventEmitter<RendererEvents> {
     this.coreSettings = new CoreSettings(this);
 
     // Internal handlers for TF messages to update the transform tree
-    this.addDatatypeSubscriptions(FRAME_TRANSFORM_DATATYPES, {
+    this.addSchemaSubscriptions(FRAME_TRANSFORM_DATATYPES, {
       handler: this.handleFrameTransform,
       forced: true,
       // Disabled until we can efficiently preload transforms. See
       // <https://github.com/foxglove/studio/issues/4657> for more details.
       // preload: config.scene.transforms?.enablePreloading ?? true,
     });
-    this.addDatatypeSubscriptions(TF_DATATYPES, {
+    this.addSchemaSubscriptions(TF_DATATYPES, {
       handler: this.handleTFMessage,
       forced: true,
       // Disabled until we can efficiently preload transforms
       // preload: config.scene.transforms?.enablePreloading ?? true,
     });
-    this.addDatatypeSubscriptions(TRANSFORM_STAMPED_DATATYPES, {
+    this.addSchemaSubscriptions(TRANSFORM_STAMPED_DATATYPES, {
       handler: this.handleTransformStamped,
       forced: true,
       // Disabled until we can efficiently preload transforms
@@ -485,37 +490,51 @@ export class Renderer extends EventEmitter<RendererEvents> {
     this.animationFrame();
   }
 
+  private _onDevicePixelRatioChange = () => {
+    log.debug(`devicePixelRatio changed to ${window.devicePixelRatio}`);
+    this.resizeHandler(this.input.canvasSize);
+    this._watchDevicePixelRatio();
+  };
+
   private _watchDevicePixelRatio() {
-    window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`).addEventListener(
-      "change",
-      () => {
-        log.debug(`devicePixelRatio changed to ${window.devicePixelRatio}`);
-        this.resizeHandler(this.input.canvasSize);
-        this._watchDevicePixelRatio();
-      },
-      { once: true },
+    this._devicePixelRatioMediaQuery = window.matchMedia(
+      `(resolution: ${window.devicePixelRatio}dppx)`,
     );
+    this._devicePixelRatioMediaQuery.addEventListener("change", this._onDevicePixelRatioChange, {
+      once: true,
+    });
   }
 
   public dispose(): void {
     log.warn(`Disposing renderer`);
+    this._devicePixelRatioMediaQuery?.removeEventListener("change", this._onDevicePixelRatioChange);
     this.removeAllListeners();
 
-    this.settings.off("update");
-    this.input.off("resize", this.resizeHandler);
-    this.input.off("click", this.clickHandler);
+    this.settings.removeAllListeners();
+    this.input.removeAllListeners();
+
     this.controls.dispose();
 
     for (const extension of this.sceneExtensions.values()) {
       extension.dispose();
     }
     this.sceneExtensions.clear();
+    this.sharedGeometry.dispose();
 
     this.labelPool.dispose();
     this.markerPool.dispose();
     this.picker.dispose();
     this.input.dispose();
     this.gl.dispose();
+  }
+
+  public cameraSyncError(): undefined | string {
+    return this._cameraSyncError;
+  }
+
+  public setCameraSyncError(error: undefined | string): void {
+    this._cameraSyncError = error;
+    this.updateCoreSettings();
   }
 
   public getPixelRatio(): number {
@@ -555,25 +574,25 @@ export class Renderer extends EventEmitter<RendererEvents> {
     this.coreSettings.updateSettingsTree();
   }
 
-  public addDatatypeSubscriptions<T>(
-    datatypes: Iterable<string>,
+  public addSchemaSubscriptions<T>(
+    schemaNames: Iterable<string>,
     subscription: RendererSubscription<T> | MessageHandler<T>,
   ): void {
     const genericSubscription =
       subscription instanceof Function
         ? { handler: subscription as MessageHandler<unknown> }
         : (subscription as RendererSubscription);
-    for (const datatype of datatypes) {
-      let handlers = this.datatypeHandlers.get(datatype);
+    for (const schemaName of schemaNames) {
+      let handlers = this.schemaHandlers.get(schemaName);
       if (!handlers) {
         handlers = [];
-        this.datatypeHandlers.set(datatype, handlers);
+        this.schemaHandlers.set(schemaName, handlers);
       }
       if (!handlers.includes(genericSubscription)) {
         handlers.push(genericSubscription);
       }
     }
-    this.emit("datatypeHandlersChanged", this);
+    this.emit("schemaHandlersChanged", this);
   }
 
   public addTopicSubscription<T>(
@@ -886,7 +905,7 @@ export class Renderer extends EventEmitter<RendererEvents> {
     }
 
     handleMessage(messageEvent, this.topicHandlers.get(messageEvent.topic));
-    handleMessage(messageEvent, this.datatypeHandlers.get(messageEvent.schemaName));
+    handleMessage(messageEvent, this.schemaHandlers.get(messageEvent.schemaName));
   }
 
   /** Match the behavior of `tf::Transformer` by stripping leading slashes from
