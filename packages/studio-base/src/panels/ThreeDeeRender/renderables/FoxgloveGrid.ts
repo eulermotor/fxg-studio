@@ -8,31 +8,40 @@ import { toNanoSec } from "@foxglove/rostime";
 import { Grid, NumericType, PackedElementField } from "@foxglove/schemas";
 import { SettingsTreeAction } from "@foxglove/studio";
 import { GRID_DATATYPES } from "@foxglove/studio-base/panels/ThreeDeeRender/foxglove";
-import {
-  baseColorModeSettingsNode,
-  ColorModeSettings,
-  getColorConverter,
-  autoSelectColorField,
-  NEEDS_MIN_MAX,
-} from "@foxglove/studio-base/panels/ThreeDeeRender/renderables/pointClouds/colors";
 import type { RosValue } from "@foxglove/studio-base/players/types";
 
 import { BaseUserData, Renderable } from "../Renderable";
 import { Renderer } from "../Renderer";
 import { PartialMessage, PartialMessageEvent, SceneExtension } from "../SceneExtension";
 import { SettingsTreeEntry, SettingsTreeNodeWithActionHandler } from "../SettingsManager";
-import { rgbaToCssString } from "../color";
+import { rgbaToCssString, rgbaToLinear, stringToRgba } from "../color";
 import { normalizePose, normalizeTime, normalizeByteArray } from "../normalizeMessages";
 import { BaseSettings } from "../settings";
+import { topicIsConvertibleToSchema } from "../topicIsConvertibleToSchema";
+import {
+  baseColorModeSettingsNode,
+  ColorModeSettings,
+  getColorConverter,
+  autoSelectColorField,
+  NEEDS_MIN_MAX,
+  FS_SRGB_TO_LINEAR,
+} from "./pointClouds/colors";
 import { FieldReader, getReader } from "./pointClouds/fieldReaders";
 
+type GridColorModeSettings = ColorModeSettings & {
+  // rgba packed modes are only supported for sensor_msgs/PointCloud2
+  colorMode: Exclude<ColorModeSettings["colorMode"], "rgb" | "rgba">;
+};
+
 export type LayerSettingsFoxgloveGrid = BaseSettings &
-  ColorModeSettings & {
+  GridColorModeSettings & {
     frameLocked: boolean;
   };
 function zeroReader(): number {
   return 0;
 }
+
+const floatTextureColorModes: GridColorModeSettings["colorMode"][] = ["gradient", "colormap"];
 
 const INVALID_FOXGLOVE_GRID = "INVALID_FOXGLOVE_GRID";
 
@@ -40,7 +49,24 @@ const DEFAULT_COLOR_MAP = "turbo";
 const DEFAULT_FLAT_COLOR = { r: 1, g: 1, b: 1, a: 1 };
 const DEFAULT_MIN_COLOR = { r: 100 / 255, g: 47 / 255, b: 105 / 255, a: 1 };
 const DEFAULT_MAX_COLOR = { r: 227 / 255, g: 177 / 255, b: 135 / 255, a: 1 };
-const DEFAULT_RGB_BYTE_ORDER = "rgba";
+
+const COLOR_MODE_TO_GLSL: {
+  [K in GridColorModeSettings["colorMode"] as `COLOR_MODE_${K extends "rgba-fields"
+    ? "RGBA"
+    : Uppercase<K>}`]: number;
+} = {
+  COLOR_MODE_FLAT: 0,
+  COLOR_MODE_RGBA: 1,
+  COLOR_MODE_GRADIENT: 2,
+  COLOR_MODE_COLORMAP: 3,
+};
+
+const COLOR_MAP_TO_GLSL: {
+  [K in ColorModeSettings["colorMap"] as `COLOR_MAP_${Uppercase<K>}`]: number;
+} = {
+  COLOR_MAP_TURBO: 0,
+  COLOR_MAP_RAINBOW: 1,
+};
 
 const DEFAULT_SETTINGS: LayerSettingsFoxgloveGrid = {
   visible: false,
@@ -53,8 +79,27 @@ const DEFAULT_SETTINGS: LayerSettingsFoxgloveGrid = {
   gradient: [rgbaToCssString(DEFAULT_MIN_COLOR), rgbaToCssString(DEFAULT_MAX_COLOR)],
   colorMap: DEFAULT_COLOR_MAP,
   explicitAlpha: 1,
-  rgbByteOrder: DEFAULT_RGB_BYTE_ORDER,
 };
+
+interface GridShaderMaterial extends THREE.ShaderMaterial {
+  uniforms: {
+    map: THREE.IUniform<THREE.DataTexture>;
+
+    colorMode: THREE.IUniform<number>;
+    minValue: THREE.IUniform<number>;
+    maxValue: THREE.IUniform<number>;
+
+    colorMap: THREE.IUniform<number>;
+    colorMapOpacity: THREE.IUniform<number>;
+
+    minGradientColorLinear: THREE.IUniform<THREE.Vector4>;
+    maxGradientColorLinear: THREE.IUniform<THREE.Vector4>;
+  };
+  defines: typeof COLOR_MODE_TO_GLSL &
+    typeof COLOR_MAP_TO_GLSL & {
+      PICKING: number;
+    };
+}
 
 export type FoxgloveGridUserData = BaseUserData & {
   settings: LayerSettingsFoxgloveGrid;
@@ -62,10 +107,43 @@ export type FoxgloveGridUserData = BaseUserData & {
   foxgloveGrid: Grid;
   mesh: THREE.Mesh;
   texture: THREE.DataTexture;
-  material: THREE.MeshBasicMaterial;
+  material: GridShaderMaterial;
   pickingMaterial: THREE.ShaderMaterial;
 };
 
+type RgbaFieldReaders = {
+  redReader: FieldReader;
+  greenReader: FieldReader;
+  blueReader: FieldReader;
+  alphaReader: FieldReader;
+};
+const tempRgbaFieldReaders: RgbaFieldReaders = {
+  redReader: zeroReader,
+  greenReader: zeroReader,
+  blueReader: zeroReader,
+  alphaReader: zeroReader,
+};
+
+function numericTypeName(type: NumericType): string {
+  return NumericType[type] ?? `${type}`;
+}
+
+function getTextureEncoding(settings: GridColorModeSettings) {
+  switch (settings.colorMode) {
+    case "flat":
+      // color is converted to linear by getColorConverter before being written to the texture
+      return THREE.LinearEncoding;
+    case "gradient":
+    case "colormap":
+      // color value is raw numeric value
+      return THREE.LinearEncoding;
+    case "rgba-fields":
+      return THREE.sRGBEncoding;
+  }
+}
+
+const tempColor = { r: 0, g: 0, b: 0, a: 1 };
+const tempMinMaxColor: THREE.Vector2Tuple = [0, 0];
 export class FoxgloveGridRenderable extends Renderable<FoxgloveGridUserData> {
   public override dispose(): void {
     this.userData.texture.dispose();
@@ -76,20 +154,242 @@ export class FoxgloveGridRenderable extends Renderable<FoxgloveGridUserData> {
   public override details(): Record<string, RosValue> {
     return this.userData.foxgloveGrid;
   }
+
+  public syncPickingMaterial(): void {
+    const { pickingMaterial, material } = this.userData;
+    pickingMaterial.uniforms = material.uniforms;
+    pickingMaterial.needsUpdate = true;
+  }
+
+  private _getRgbaFieldReaders(out: RgbaFieldReaders, foxgloveGrid: Grid) {
+    const { cell_stride } = foxgloveGrid;
+    for (const field of foxgloveGrid.fields) {
+      const { name } = field;
+      if (name === "red") {
+        out.redReader = getReader(field, cell_stride, /*normalize*/ true) ?? zeroReader;
+      } else if (name === "green") {
+        out.greenReader = getReader(field, cell_stride, /*normalize*/ true) ?? zeroReader;
+      } else if (name === "blue") {
+        out.blueReader = getReader(field, cell_stride, /*normalize*/ true) ?? zeroReader;
+      } else if (name === "alpha") {
+        out.alphaReader = getReader(field, cell_stride, /*normalize*/ true) ?? zeroReader;
+      }
+    }
+  }
+
+  private _getColorByFieldReader(
+    foxgloveGrid: Grid,
+    settings: LayerSettingsFoxgloveGrid,
+  ): FieldReader | undefined {
+    const { cell_stride } = foxgloveGrid;
+
+    for (const field of foxgloveGrid.fields) {
+      const { type, offset, name } = field;
+
+      if (name === settings.colorField) {
+        const fieldReader = getReader(field, cell_stride);
+        if (!fieldReader) {
+          const typeName = NumericType[type];
+          const message = `Grid field "${name}" is invalid. type=${typeName}, offset=${offset}, stride=${cell_stride}`;
+          invalidFoxgloveGridError(this.renderer, this.userData.topic, message);
+          return undefined;
+        }
+        return fieldReader;
+      }
+    }
+
+    return zeroReader;
+  }
+
+  public updateMaterial(settings: LayerSettingsFoxgloveGrid): void {
+    const { colorMode } = settings;
+    const { material } = this.userData;
+    let updated = false;
+    let transparent = false;
+    if (colorMode === "flat") {
+      stringToRgba(tempColor, settings.flatColor);
+      transparent = tempColor.a < 1.0;
+    } else if (colorMode === "gradient") {
+      stringToRgba(tempColor, settings.gradient[0]);
+      transparent = tempColor.a < 1.0;
+
+      stringToRgba(tempColor, settings.gradient[1]);
+      transparent = transparent || tempColor.a < 1.0;
+    } else if (colorMode === "colormap") {
+      transparent = settings.explicitAlpha < 1.0;
+    }
+    if (transparent !== material.transparent) {
+      material.depthWrite = !transparent;
+      material.transparent = transparent;
+      updated = true;
+    }
+    if (updated) {
+      material.needsUpdate = true;
+    }
+  }
+
+  public updateUniforms(foxgloveGrid: Grid, settings: LayerSettingsFoxgloveGrid): void {
+    const { material } = this.userData;
+    const {
+      uniforms: {
+        colorMode,
+        colorMap,
+        colorMapOpacity,
+        minValue,
+        maxValue,
+        minGradientColorLinear,
+        maxGradientColorLinear,
+      },
+    } = material;
+
+    if (settings.colorMode === "rgba-fields") {
+      colorMode.value = COLOR_MODE_TO_GLSL.COLOR_MODE_RGBA;
+    } else {
+      colorMode.value = COLOR_MODE_TO_GLSL[`COLOR_MODE_${settings.colorMode.toUpperCase()}`];
+    }
+
+    colorMap.value = COLOR_MAP_TO_GLSL[`COLOR_MAP_${settings.colorMap.toUpperCase()}`];
+
+    colorMapOpacity.value = settings.explicitAlpha;
+
+    minMaxColorValues(
+      tempMinMaxColor,
+      settings,
+      foxgloveGrid.fields.find((field) => settings.colorField === field.name)?.type ??
+        NumericType.UNKNOWN,
+    );
+
+    const [minColorValue, maxColorValue] = tempMinMaxColor;
+    minValue.value = minColorValue;
+    maxValue.value = maxColorValue;
+
+    const minColor = stringToRgba(tempColor, settings.gradient[0]);
+    rgbaToLinear(minColor, minColor);
+    minGradientColorLinear.value.set(minColor.r, minColor.g, minColor.b, minColor.a);
+
+    const maxColor = stringToRgba(tempColor, settings.gradient[1]);
+    rgbaToLinear(maxColor, maxColor);
+    maxGradientColorLinear.value.set(maxColor.r, maxColor.g, maxColor.b, maxColor.a);
+    // unnecessary to update material because all uniforms are sent to GPU every frame
+  }
+
+  public updateTexture(foxgloveGrid: Grid, settings: LayerSettingsFoxgloveGrid): void {
+    let texture = this.userData.texture;
+    const fieldReader = this._getColorByFieldReader(foxgloveGrid, settings);
+    if (!fieldReader) {
+      return;
+    }
+
+    const view = new DataView(
+      foxgloveGrid.data.buffer,
+      foxgloveGrid.data.byteOffset,
+      foxgloveGrid.data.byteLength,
+    );
+
+    const { column_count: cols, row_stride, cell_stride } = foxgloveGrid;
+    const rows = foxgloveGrid.data.length / row_stride;
+    const sizeChanged = cols !== texture.image.width || rows !== texture.image.height;
+    const floatMode = floatTextureColorModes.includes(settings.colorMode);
+    const formatChanged = floatMode
+      ? texture.format !== THREE.RedFormat
+      : texture.format !== THREE.RGBAFormat;
+    if (formatChanged || sizeChanged) {
+      // The image dimensions or format changed, regenerate the texture
+      texture.dispose();
+      texture = createTexture(foxgloveGrid, settings);
+      texture.generateMipmaps = false;
+      this.userData.texture = texture;
+      this.userData.material.uniforms.map.value = texture;
+    }
+
+    const encoding = getTextureEncoding(settings);
+    if (encoding !== texture.encoding) {
+      texture.encoding = encoding;
+      texture.needsUpdate = true;
+    }
+
+    if (floatMode) {
+      // FLOAT texture handling (gradient & colorMap)
+      // type of image.data is Uint8ClampedArray, but it is in fact the raw texture data even thought it's
+      // meant to be used as an RGBA image data array
+      const valueData = texture.image.data as unknown as Float32Array;
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          const offset = y * row_stride + x * cell_stride;
+          const colorValue = fieldReader(view, offset);
+          const i = y * cols + x;
+          valueData[i] = colorValue;
+        }
+      }
+    } else {
+      // RGBA textures (flat & rgba modes)
+      const rgba = texture.image.data;
+      let hasTransparency = false;
+      if (settings.colorMode === "rgba-fields") {
+        this._getRgbaFieldReaders(tempRgbaFieldReaders, foxgloveGrid);
+        const { redReader, greenReader, blueReader, alphaReader } = tempRgbaFieldReaders;
+        for (let y = 0; y < rows; y++) {
+          for (let x = 0; x < cols; x++) {
+            const offset = y * row_stride + x * cell_stride;
+            const i = y * cols + x;
+            const rgbaOffset = i * 4;
+            const alpha = alphaReader(view, offset);
+            rgba[rgbaOffset + 0] = (redReader(view, offset) * 255) | 0;
+            rgba[rgbaOffset + 1] = (greenReader(view, offset) * 255) | 0;
+            rgba[rgbaOffset + 2] = (blueReader(view, offset) * 255) | 0;
+            rgba[rgbaOffset + 3] = (alpha * 255) | 0;
+
+            // We cheat a little with transparency: alpha 0 will be handled by the alphaTest setting, so
+            // we don't need to set material.transparent = true.
+            if (alpha !== 0 && alpha !== 1) {
+              hasTransparency = true;
+            }
+          }
+        }
+      } else {
+        // flat
+        const colorConverter = getColorConverter(
+          settings as typeof settings & { colorMode: typeof settings.colorMode },
+          0,
+          1,
+        );
+        for (let y = 0; y < rows; y++) {
+          for (let x = 0; x < cols; x++) {
+            const offset = y * row_stride + x * cell_stride;
+            const colorValue = fieldReader(view, offset);
+            colorConverter(tempColor, colorValue);
+            const i = y * cols + x;
+            const rgbaOffset = i * 4;
+            rgba[rgbaOffset + 0] = Math.floor(tempColor.r * 255);
+            rgba[rgbaOffset + 1] = Math.floor(tempColor.g * 255);
+            rgba[rgbaOffset + 2] = Math.floor(tempColor.b * 255);
+            rgba[rgbaOffset + 3] = Math.floor(tempColor.a * 255);
+
+            // We cheat a little with transparency: alpha 0 will be handled by the alphaTest setting, so
+            // we don't need to set material.transparent = true.
+            if (tempColor.a !== 0 && tempColor.a !== 1) {
+              hasTransparency = true;
+            }
+          }
+        }
+      }
+      if (this.userData.material.transparent !== hasTransparency) {
+        this.userData.material.transparent = hasTransparency;
+        this.userData.material.depthWrite = !hasTransparency;
+        this.userData.material.needsUpdate = true;
+      }
+    }
+    this.userData.material.uniforms.map.value.needsUpdate = true;
+  }
 }
-const tempFieldReader = {
-  fieldReader: zeroReader as FieldReader,
-};
-const tempColor = { r: 0, g: 0, b: 0, a: 1 };
-const tempMinMaxColor: THREE.Vector2Tuple = [0, 0];
+
 export class FoxgloveGrid extends SceneExtension<FoxgloveGridRenderable> {
-  private static geometry: THREE.PlaneGeometry | undefined;
   private fieldsByTopic = new Map<string, string[]>();
 
   public constructor(renderer: Renderer) {
     super("foxglove.Grid", renderer);
 
-    renderer.addDatatypeSubscriptions(GRID_DATATYPES, this.handleFoxgloveGrid);
+    renderer.addSchemaSubscriptions(GRID_DATATYPES, this.handleFoxgloveGrid);
   }
 
   public override settingsNodes(): SettingsTreeEntry[] {
@@ -97,28 +397,29 @@ export class FoxgloveGrid extends SceneExtension<FoxgloveGridRenderable> {
     const handler = this.handleSettingsAction;
     const entries: SettingsTreeEntry[] = [];
     for (const topic of this.renderer.topics ?? []) {
-      if (GRID_DATATYPES.has(topic.schemaName)) {
-        const config = (configTopics[topic.name] ?? {}) as Partial<LayerSettingsFoxgloveGrid>;
-
-        const node = baseColorModeSettingsNode(
-          this.fieldsByTopic.get(topic.name) ?? [],
-          config,
-          topic,
-          DEFAULT_SETTINGS,
-          { supportsRgbModes: true },
-        );
-        node.icon = "Cells";
-        node.fields.frameLocked = {
-          label: "Frame lock",
-          input: "boolean",
-          value: config.frameLocked ?? DEFAULT_SETTINGS.frameLocked,
-        };
-        (node as SettingsTreeNodeWithActionHandler).handler = handler;
-        entries.push({
-          path: ["topics", topic.name],
-          node,
-        });
+      if (!topicIsConvertibleToSchema(topic, GRID_DATATYPES)) {
+        continue;
       }
+      const config = (configTopics[topic.name] ?? {}) as Partial<LayerSettingsFoxgloveGrid>;
+
+      const node = baseColorModeSettingsNode(
+        this.fieldsByTopic.get(topic.name) ?? [],
+        config,
+        topic,
+        DEFAULT_SETTINGS,
+        { supportsPackedRgbModes: false, supportsRgbaFieldsMode: true },
+      );
+      node.icon = "Cells";
+      node.fields.frameLocked = {
+        label: "Frame lock",
+        input: "boolean",
+        value: config.frameLocked ?? DEFAULT_SETTINGS.frameLocked,
+      };
+      (node as SettingsTreeNodeWithActionHandler).handler = handler;
+      entries.push({
+        path: ["topics", topic.name],
+        node,
+      });
     }
     return entries;
   }
@@ -140,12 +441,18 @@ export class FoxgloveGrid extends SceneExtension<FoxgloveGridRenderable> {
         | undefined;
       renderable.userData.settings = { ...DEFAULT_SETTINGS, ...settings };
 
-      this._updateFoxgloveGridRenderable(
-        renderable,
-        renderable.userData.foxgloveGrid,
-        renderable.userData.receiveTime,
-        renderable.userData.settings,
-      );
+      renderable.updateMaterial(renderable.userData.settings);
+      renderable.updateUniforms(renderable.userData.foxgloveGrid, renderable.userData.settings);
+      if (
+        action.payload.path[2] === "colorMode" ||
+        action.payload.path[2] === "colorField" ||
+        action.payload.path[2] === "flatColor"
+      ) {
+        // needs to recalculate texture when colorMode or colorField changes
+        // technically it doesn't if it's going between gradient and colorMap, but since it's an infrequent user-action it's not a big hit
+        renderable.updateTexture(renderable.userData.foxgloveGrid, renderable.userData.settings);
+      }
+      renderable.syncPickingMaterial();
     }
   };
 
@@ -155,14 +462,24 @@ export class FoxgloveGrid extends SceneExtension<FoxgloveGridRenderable> {
     const receiveTime = toNanoSec(messageEvent.receiveTime);
 
     let renderable = this.renderables.get(topic);
-    if (!renderable) {
+
+    if (!this._validateFoxgloveGrid(foxgloveGrid, messageEvent.topic)) {
+      if (renderable) {
+        renderable.visible = false;
+      }
+      return;
+    }
+
+    if (renderable) {
+      renderable.visible = true;
+    } else {
       // Set the initial settings from default values merged with any user settings
       const userSettings = this.renderer.config.topics[topic] as
         | Partial<LayerSettingsFoxgloveGrid>
         | undefined;
       const settings = { ...DEFAULT_SETTINGS, ...userSettings };
       if (settings.colorField == undefined) {
-        autoSelectColorField(settings, foxgloveGrid.fields);
+        autoSelectColorField(settings, foxgloveGrid.fields, { supportsPackedRgbModes: false });
         // Update user settings with the newly selected color field
         this.renderer.updateConfig((draft) => {
           const updatedUserSettings = { ...userSettings };
@@ -173,9 +490,14 @@ export class FoxgloveGrid extends SceneExtension<FoxgloveGridRenderable> {
         });
       }
 
-      const texture = createTexture(foxgloveGrid);
-      const mesh = createMesh(topic, texture);
-      const material = mesh.material as THREE.MeshBasicMaterial;
+      // Check color
+      const texture = createTexture(foxgloveGrid, settings);
+      const geometry = this.renderer.sharedGeometry.getGeometry(
+        this.constructor.name,
+        createGridGeometry,
+      );
+      const mesh = createMesh(topic, texture, geometry);
+      const material = mesh.material as GridShaderMaterial;
       const pickingMaterial = mesh.userData.pickingMaterial as THREE.ShaderMaterial;
 
       // Create the renderable
@@ -214,56 +536,59 @@ export class FoxgloveGrid extends SceneExtension<FoxgloveGridRenderable> {
     );
   };
 
-  private _getFieldReader(
-    output: { fieldReader: FieldReader },
-    foxgloveGrid: Grid,
-    renderable: FoxgloveGridRenderable,
-    settings: LayerSettingsFoxgloveGrid,
-  ): boolean {
-    let colorReader: FieldReader | undefined;
+  private _validateFoxgloveGrid(foxgloveGrid: Grid, topic: string): boolean {
+    const { cell_stride, row_stride, column_count: cols } = foxgloveGrid;
+    const rows = foxgloveGrid.data.byteLength / row_stride;
 
-    const stride = foxgloveGrid.cell_stride;
+    if (foxgloveGrid.fields.length === 0) {
+      invalidFoxgloveGridError(
+        this.renderer,
+        topic,
+        `Grid has no fields. At least one field is required for the Grid to be displayed.`,
+      );
+      return false;
+    }
+
+    if (Math.floor(cols) !== cols || Math.floor(rows) !== rows) {
+      const message = `Grid column count (${foxgloveGrid.column_count}) or row count (${rows} = data.byteLength ${foxgloveGrid.data.byteLength} / row_stride ${row_stride}) is not an integer.`;
+      invalidFoxgloveGridError(this.renderer, topic, message);
+      return false;
+    }
+
+    if (cell_stride * cols > row_stride) {
+      const message = `Grid row_stride (${row_stride}) does not allow for requisite column_count (${cols}) with cell stride (${cell_stride}). Minimum requisite bytes in row_stride needed: (${
+        cols * cell_stride
+      }) `;
+      invalidFoxgloveGridError(this.renderer, topic, message);
+      return false;
+    }
 
     // Determine the minimum bytes needed per cell based on offset/size of each
     // field, so we can ensure cell_stride is >= this value
     let minBytesPerCell = 0;
-
-    for (let i = 0; i < foxgloveGrid.fields.length; i++) {
-      const field = foxgloveGrid.fields[i]!;
-      const { type, offset, name } = field;
-
-      const byteWidth = numericTypeWidth(type);
-      minBytesPerCell = Math.max(minBytesPerCell, offset + byteWidth);
-
-      if (name === settings.colorField) {
-        // If the selected color mode is rgb/rgba and the field only has one channel with at least a
-        // four byte width, force the color data to be interpreted as four individual bytes. This
-        // overcomes a common problem where the color field data type is set to float32 or something
-        // other than uint32
-        const forceType =
-          (settings.colorMode === "rgb" || settings.colorMode === "rgba") && byteWidth >= 4
-            ? NumericType.UINT32
-            : undefined;
-        colorReader = getReader(field, stride, forceType);
-        if (!colorReader) {
-          const typeName = NumericType[type];
-          const message = `Grid field "${field.name}" is invalid. type=${typeName}, offset=${field.offset}, stride=${stride}`;
-          invalidFoxgloveGridError(this.renderer, renderable, message);
-          return false;
-        }
+    let maxField: PackedElementField | undefined;
+    for (const field of foxgloveGrid.fields) {
+      const byteWidth = numericTypeWidth(field.type);
+      if (field.offset + byteWidth > minBytesPerCell) {
+        minBytesPerCell = field.offset + byteWidth;
+        maxField = field;
       }
     }
-
-    if (minBytesPerCell > stride) {
-      const message = `Grid stride ${stride} is less than minimum bytes per cell ${minBytesPerCell}`;
-      invalidFoxgloveGridError(this.renderer, renderable, message);
+    if (minBytesPerCell > cell_stride) {
+      let message = `Grid cell_stride (${cell_stride}) is less than minimum bytes per cell (${minBytesPerCell})`;
+      if (maxField) {
+        message += ` required by “${maxField.name}” field, type=${numericTypeName(
+          maxField.type,
+        )}, offset=${maxField.offset}`;
+      }
+      invalidFoxgloveGridError(this.renderer, topic, message);
       return false;
     }
 
-    output.fieldReader = colorReader ?? zeroReader;
     return true;
   }
 
+  /** @param foxgloveGrid must be validated already */
   private _updateFoxgloveGridRenderable(
     renderable: FoxgloveGridRenderable,
     foxgloveGrid: Grid,
@@ -275,134 +600,64 @@ export class FoxgloveGrid extends SceneExtension<FoxgloveGridRenderable> {
     renderable.userData.receiveTime = receiveTime;
     renderable.userData.messageTime = toNanoSec(foxgloveGrid.timestamp);
     renderable.userData.frameId = this.renderer.normalizeFrameId(foxgloveGrid.frame_id);
-    if (foxgloveGrid.fields.length === 0) {
-      invalidFoxgloveGridError(this.renderer, renderable, `Grid has no fields to color by`);
-      return;
-    }
-    const { cell_stride, row_stride, column_count: cols } = foxgloveGrid;
+    const { row_stride, column_count: cols } = foxgloveGrid;
     const rows = foxgloveGrid.data.byteLength / row_stride;
 
-    if (Math.floor(cols) !== cols || Math.floor(rows) !== rows) {
-      const message = `Grid column count (${foxgloveGrid.column_count}) or row count (${rows} = data.byteLength ${foxgloveGrid.data.byteLength} / row_stride ${row_stride}) is not an integer.`;
-      invalidFoxgloveGridError(this.renderer, renderable, message);
-      return;
-    }
-
-    if (cell_stride * cols > row_stride) {
-      const message = `Grid row_stride (${row_stride}) does not allow for requisite column_count (${cols}) with cell stride (${cell_stride}). Minimum requisite bytes in row_stride needed: (${
-        cols * cell_stride
-      }) `;
-      invalidFoxgloveGridError(this.renderer, renderable, message);
-      return;
-    }
-    if (!this._getFieldReader(tempFieldReader, foxgloveGrid, renderable, settings)) {
-      return;
-    }
-
-    const data = foxgloveGrid.data;
-    const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-
-    // Iterate the grid data to determine min/max color values (if needed)
-    minMaxColorValues(
-      tempMinMaxColor,
-      settings,
-      foxgloveGrid.fields.find((field) => settings.colorField === field.name)?.type ??
-        NumericType.UNKNOWN,
-    );
-
-    let texture = renderable.userData.texture;
-
-    if (cols !== texture.image.width || rows !== texture.image.height) {
-      // The image dimensions changed, regenerate the texture
-      texture.dispose();
-      texture = createTexture(foxgloveGrid);
-      renderable.userData.texture = texture;
-      renderable.userData.material.map = texture;
-    }
-
-    const rgba = texture.image.data;
-    let hasTransparency = false;
-
-    const [minColorValue, maxColorValue] = tempMinMaxColor;
-    const { fieldReader } = tempFieldReader;
-    const colorConverter = getColorConverter(settings, minColorValue, maxColorValue);
-    for (let y = 0; y < rows; y++) {
-      for (let x = 0; x < cols; x++) {
-        const offset = y * foxgloveGrid.row_stride + x * foxgloveGrid.cell_stride;
-        const colorValue = fieldReader(view, offset);
-        colorConverter(tempColor, colorValue);
-        const i = y * cols + x;
-        const rgbaOffset = i * 4;
-        rgba[rgbaOffset + 0] = Math.floor(tempColor.r * 255);
-        rgba[rgbaOffset + 1] = Math.floor(tempColor.g * 255);
-        rgba[rgbaOffset + 2] = Math.floor(tempColor.b * 255);
-        rgba[rgbaOffset + 3] = Math.floor(tempColor.a * 255);
-
-        // We cheat a little with transparency: alpha 0 will be handled by the alphaTest setting, so
-        // we don't need to set material.transparent = true.
-        if (tempColor.a !== 0 && tempColor.a !== 1) {
-          hasTransparency = true;
-        }
-      }
-    }
-
-    texture.needsUpdate = true;
-
-    if (renderable.userData.material.transparent !== hasTransparency) {
-      renderable.userData.material.transparent = hasTransparency;
-      renderable.userData.material.depthWrite = !hasTransparency;
-      renderable.userData.material.needsUpdate = true;
-    }
+    renderable.updateMaterial(settings);
+    renderable.updateUniforms(foxgloveGrid, settings);
+    renderable.updateTexture(foxgloveGrid, settings);
 
     renderable.scale.set(foxgloveGrid.cell_size.x * cols, foxgloveGrid.cell_size.y * rows, 1);
-  }
 
-  public static Geometry(): THREE.PlaneGeometry {
-    if (!FoxgloveGrid.geometry) {
-      FoxgloveGrid.geometry = new THREE.PlaneGeometry(1, 1, 1, 1);
-      FoxgloveGrid.geometry.translate(0.5, 0.5, 0);
-      FoxgloveGrid.geometry.computeBoundingSphere();
-    }
-    return FoxgloveGrid.geometry;
+    renderable.syncPickingMaterial();
   }
 }
-
-function invalidFoxgloveGridError(
-  renderer: Renderer,
-  renderable: FoxgloveGridRenderable,
-  message: string,
-): void {
-  renderer.settings.errors.addToTopic(renderable.userData.topic, INVALID_FOXGLOVE_GRID, message);
+function createGridGeometry(): THREE.PlaneGeometry {
+  const geometry = new THREE.PlaneGeometry(1, 1, 1, 1);
+  geometry.translate(0.5, 0.5, 0);
+  geometry.computeBoundingSphere();
+  return geometry;
 }
 
-function createTexture(foxgloveGrid: Grid): THREE.DataTexture {
+function invalidFoxgloveGridError(renderer: Renderer, topic: string, message: string): void {
+  renderer.settings.errors.addToTopic(topic, INVALID_FOXGLOVE_GRID, message);
+}
+
+function createTexture(foxgloveGrid: Grid, settings: GridColorModeSettings): THREE.DataTexture {
   const { column_count: cols, row_stride } = foxgloveGrid;
   const rows = foxgloveGrid.data.byteLength / row_stride;
-  const size = cols * rows;
-  const rgba = new Uint8ClampedArray(size * 4);
+  const size = isFinite(cols * rows) ? cols * rows : 0;
+  const isFloatType = floatTextureColorModes.includes(settings.colorMode);
+  const data = isFloatType ? new Float32Array(size) : new Uint8ClampedArray(size * 4);
+  const format = isFloatType ? THREE.RedFormat : THREE.RGBAFormat;
+  const type = isFloatType ? THREE.FloatType : THREE.UnsignedByteType;
   const texture = new THREE.DataTexture(
-    rgba,
+    data,
     cols,
     rows,
-    THREE.RGBAFormat,
-    THREE.UnsignedByteType,
+    format,
+    type,
     THREE.UVMapping,
     THREE.ClampToEdgeWrapping,
     THREE.ClampToEdgeWrapping,
     THREE.NearestFilter,
     THREE.LinearFilter,
     1,
-    THREE.LinearEncoding, // FoxgloveGrid carries linear grayscale values, not sRGB
+    getTextureEncoding(settings),
   );
   texture.generateMipmaps = false;
   return texture;
 }
 
-function createMesh(topic: string, texture: THREE.DataTexture): THREE.Mesh {
+function createMesh(
+  topic: string,
+  texture: THREE.DataTexture,
+  geometry: THREE.PlaneGeometry,
+): THREE.Mesh {
   // Create the texture, material, and mesh
-  const pickingMaterial = createPickingMaterial(texture);
   const material = createMaterial(texture, topic);
-  const mesh = new THREE.Mesh(FoxgloveGrid.Geometry(), material);
+  const pickingMaterial = createPickingMaterial(material);
+  const mesh = new THREE.Mesh(geometry, material);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   // This overrides the picking material used for `mesh`. See Picker.ts
@@ -429,19 +684,24 @@ function numericTypeWidth(type: NumericType): number {
   }
 }
 
-function createMaterial(texture: THREE.DataTexture, topic: string): THREE.MeshBasicMaterial {
-  return new THREE.MeshBasicMaterial({
+function createMaterial(texture: THREE.DataTexture, topic: string): GridShaderMaterial {
+  return new THREE.ShaderMaterial({
     name: `${topic}:Material`,
     // Enable alpha clipping. Fully transparent (alpha=0) pixels are skipped
     // even when transparency is disabled
     alphaTest: 1e-4,
-    map: texture,
     side: THREE.DoubleSide,
-  });
-}
-
-function createPickingMaterial(texture: THREE.DataTexture): THREE.ShaderMaterial {
-  return new THREE.ShaderMaterial({
+    uniforms: {
+      objectId: { value: [NaN, NaN, NaN, NaN] },
+      colorMode: { value: COLOR_MODE_TO_GLSL.COLOR_MODE_RGBA },
+      colorMap: { value: COLOR_MAP_TO_GLSL.COLOR_MAP_TURBO },
+      colorMapOpacity: { value: 1.0 },
+      minValue: { value: 0.0 },
+      maxValue: { value: 1.0 },
+      minGradientColorLinear: { value: new THREE.Vector4() },
+      maxGradientColorLinear: { value: new THREE.Vector4() },
+      map: { value: texture },
+    },
     vertexShader: /* glsl */ `
       varying vec2 vUv;
       void main() {
@@ -449,21 +709,140 @@ function createPickingMaterial(texture: THREE.DataTexture): THREE.ShaderMaterial
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `,
+    defines: {
+      ...COLOR_MODE_TO_GLSL,
+      ...COLOR_MAP_TO_GLSL,
+      PICKING: 0,
+    },
     fragmentShader: /* glsl */ `
-      uniform sampler2D map;
       uniform vec4 objectId;
+
+      uniform sampler2D map;
+
+      uniform int colorMode;
+      uniform float minValue;
+      uniform float maxValue;
+
+      uniform int colorMap;
+      uniform float colorMapOpacity;
+
+      uniform vec4 minGradientColorLinear;
+      uniform vec4 maxGradientColorLinear;
+
       varying vec2 vUv;
+
+      ${FS_SRGB_TO_LINEAR}
+
+      // adapted from https://gist.github.com/mikhailov-work/0d177465a8151eb6ede1768d51d476c7
+      vec3 turboLinear(float x) {
+        const vec4 kRedVec4 = vec4(0.13572138, 4.61539260, -42.66032258, 132.13108234);
+        const vec4 kGreenVec4 = vec4(0.09140261, 2.19418839, 4.84296658, -14.18503333);
+        const vec4 kBlueVec4 = vec4(0.10667330, 12.64194608, -60.58204836, 110.36276771);
+        const vec2 kRedVec2 = vec2(-152.94239396, 59.28637943);
+        const vec2 kGreenVec2 = vec2(4.27729857, 2.82956604);
+        const vec2 kBlueVec2 = vec2(-89.90310912, 27.34824973);
+
+        vec4 v4 = vec4(1.0, x, x * x, x * x * x);
+        vec2 v2 = v4.zw * v4.z;
+        return sRGBToLinear(vec3(
+          (dot(v4, kRedVec4)   + dot(v2, kRedVec2)),
+          (dot(v4, kGreenVec4) + dot(v2, kGreenVec2)),
+          (dot(v4, kBlueVec4)  + dot(v2, kBlueVec2))
+        ));
+      }
+
+
+      // taken from http://docs.ros.org/jade/api/rviz/html/c++/point__cloud__transformers_8cpp_source.html
+      // line 47
+      vec3 rainbowLinear(float pct) {
+        vec3 colorOut = vec3(0.0);
+        float h = (1.0 - clamp(pct, 0.0, 1.0)) * 5.0 + 1.0;
+        float i = floor(h);
+        float f = mod(h, 1.0);
+        // if i is even
+        if (mod(i, 2.0) < 1.0) {
+          f = 1.0 - f;
+        }
+        float n = (1.0 - f);
+
+        if (i <= 1.0) {
+          colorOut.r = n;
+          colorOut.g = 0.0;
+          colorOut.b = 1.0;
+        } else if (i == 2.0) {
+          colorOut.r = 0.0;
+          colorOut.g = n;
+          colorOut.b = 1.0;
+        } else if (i == 3.0) {
+          colorOut.r = 0.0;
+          colorOut.g = 1.0;
+          colorOut.b = n;
+        } else if (i == 4.0) {
+          colorOut.r = n;
+          colorOut.g = 1.0;
+          colorOut.b = 0.0;
+        } else {
+          colorOut.r = 1.0;
+          colorOut.g = n;
+          colorOut.b = 0.0;
+        }
+        return sRGBToLinear(colorOut);
+      }
+
       void main() {
         vec4 color = texture2D(map, vUv);
-        if (color.a == 0.0) {
+        if(colorMode == COLOR_MODE_RGBA) {
+          // input color is in sRGB, texture.encoding is sRGB, so no conversion is needed
+          gl_FragColor = color;
+        } else if (colorMode == COLOR_MODE_FLAT) {
+          // input color was already converted to linear by getColorConverter
+          gl_FragColor = color;
+        } else {
+          // input color was already converted to linear by getColorConverter
+          float delta = max(maxValue - minValue, 0.00001);
+          float colorValue = color.r;
+          float normalizedColorValue = clamp((colorValue - minValue) / delta, 0.0, 1.0);
+          if(colorMode == COLOR_MODE_GRADIENT) {
+            /**
+            * Computes a gradient step from colors a to b using pre-multiplied alpha to
+            * match CSS linear gradients. The inputs are assumed to not have pre-multiplied
+            * alpha, and the output will have pre-multiplied alpha.
+            */
+            vec4 weightedMinColor = vec4(minGradientColorLinear.rgb * minGradientColorLinear.a, minGradientColorLinear.a);
+            vec4 weightedMaxColor = vec4(maxGradientColorLinear.rgb * maxGradientColorLinear.a, maxGradientColorLinear.a);
+            vec4 finalColor = mix(weightedMinColor, weightedMaxColor, normalizedColorValue);
+            // gradient computation takes place in linear colorspace
+            gl_FragColor = finalColor;
+          } else if(colorMode == COLOR_MODE_COLORMAP) {
+            // colormap
+            if(colorMap == COLOR_MAP_TURBO) {
+              gl_FragColor = vec4(turboLinear(normalizedColorValue), colorMapOpacity);
+            } else if(colorMap == COLOR_MAP_RAINBOW) {
+              gl_FragColor = vec4(rainbowLinear(normalizedColorValue), colorMapOpacity);
+            }
+          }
+        }
+        if(gl_FragColor.a < 0.00001) {
           discard;
         }
-        gl_FragColor = objectId;
+        if(PICKING == 1) {
+          gl_FragColor = objectId;
+        } else {
+          #include <encodings_fragment>
+        }
       }
     `,
-    side: THREE.DoubleSide,
-    uniforms: { map: { value: texture }, objectId: { value: [NaN, NaN, NaN, NaN] } },
-  });
+  }) as GridShaderMaterial;
+}
+
+function createPickingMaterial(originalMaterial: GridShaderMaterial): THREE.ShaderMaterial {
+  const material = new THREE.ShaderMaterial();
+  material.copy(originalMaterial);
+  material.name = "";
+  material.defines.PICKING = 1;
+  material.uniformsNeedUpdate = true;
+  material.needsUpdate = true;
+  return material;
 }
 
 function normalizePackedElementField(

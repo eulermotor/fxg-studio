@@ -102,7 +102,8 @@ export default class VelodynePlayer implements Player {
     if (this._closed) {
       return;
     }
-    this._presence = PlayerPresence.INITIALIZING;
+    this._presence = PlayerPresence.PRESENT;
+    this._emitState();
 
     if (this._socket == undefined) {
       const net = await Sockets.Create();
@@ -148,7 +149,6 @@ export default class VelodynePlayer implements Player {
     this._clearProblem(PROBLEM_SOCKET_ERROR, { skipEmit: true });
 
     if (this._seq === 0) {
-      this._metricsCollector.initialized();
       this._metricsCollector.recordTimeToFirstMsgs();
     }
 

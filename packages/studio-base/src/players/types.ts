@@ -268,7 +268,7 @@ export type SubscriptionPreloadType =
 
 // Represents a subscription to a single topic, for use in `setSubscriptions`.
 export type SubscribePayload = {
-  // The topic name to subscribe to.
+  // The topic name to subscribe to
   topic: string;
   preloadType?: SubscriptionPreloadType;
 };
@@ -314,7 +314,6 @@ export const PlayerCapabilities = {
 export interface PlayerMetricsCollectorInterface {
   setProperty(key: string, value: string | number | boolean): void;
   playerConstructed(): void;
-  initialized(args?: { isSampleDataSource: boolean }): void;
   play(speed: number): void;
   seek(time: Time): void;
   setSpeed(speed: number): void;

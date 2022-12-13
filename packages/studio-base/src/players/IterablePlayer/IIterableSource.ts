@@ -54,16 +54,32 @@ export type MessageIteratorArgs = {
   consumptionType?: "full" | "partial";
 };
 
+/**
+ * IteratorResult represents a single result from a message iterator or cursor. There are three
+ * types of results.
+ *
+ * - message-event: the result contains a MessageEvent
+ * - problem: the result contains a problem
+ * - stamp: the result is a timestamp
+ *
+ * Note: A stamp result acts as a marker indicating that the source has reached the specified stamp.
+ * The source may return stamp results to indicate to callers that it has read through some time
+ * when there are no message events available to indicate the time is reached.
+ */
 export type IteratorResult =
   | {
-      connectionId: number | undefined;
+      type: "message-event";
+      connectionId?: number;
       msgEvent: MessageEvent<unknown>;
-      problem: undefined;
     }
   | {
-      connectionId: number | undefined;
-      msgEvent: undefined;
+      type: "problem";
+      connectionId?: number;
       problem: PlayerProblem;
+    }
+  | {
+      type: "stamp";
+      stamp: Time;
     };
 
 export type GetBackfillMessagesArgs = {
@@ -89,6 +105,15 @@ export interface IMessageCursor {
    * Read the next message from the cursor. Return a result or undefined if the cursor is done
    */
   next(): Promise<IteratorResult | undefined>;
+
+  /**
+   * Read the next batch of messages from the cursor. Return an array of results or undefined if the cursor is done.
+   *
+   * @param durationMs indicate the duration (in milliseconds) for the batch to stop waiting for
+   * more messages and return. This duration tracks the receive time from the first message in the
+   * batch.
+   */
+  nextBatch(durationMs: number): Promise<IteratorResult[] | undefined>;
 
   /**
    * Read a batch of messages through end time (inclusive) or end of cursor

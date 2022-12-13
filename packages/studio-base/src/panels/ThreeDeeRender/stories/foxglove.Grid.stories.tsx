@@ -57,7 +57,13 @@ function copyGridAtPosition(
   };
 }
 
-function Foxglove_Grid_Uint8(): JSX.Element {
+function Foxglove_Grid_Uint8({
+  minValue,
+  maxValue,
+}: {
+  minValue?: number;
+  maxValue?: number;
+}): JSX.Element {
   const topics: Topic[] = [
     { name: "/grid", schemaName: "foxglove.Grid" },
     { name: "/tf", schemaName: "geometry_msgs/TransformStamped" },
@@ -216,24 +222,32 @@ function Foxglove_Grid_Uint8(): JSX.Element {
               colorField: "checkerboard",
               colorMode: "gradient",
               gradient: ["#ff0000ff", "#00ff0001"],
+              minValue,
+              maxValue,
             } as LayerSettingsFoxgloveGrid,
             "/grid2": {
               visible: true,
               colorField: "gradient",
               colorMode: "colormap",
               colorMap: "rainbow",
+              minValue,
+              maxValue,
             } as LayerSettingsFoxgloveGrid,
             "/grid3": {
               visible: true,
               colorField: "gradient",
               colorMode: "colormap",
               colorMap: "turbo",
+              minValue,
+              maxValue,
             } as LayerSettingsFoxgloveGrid,
             "/grid4": {
               visible: true,
               colorField: "colStripes",
               colorMode: "colormap",
               colorMap: "turbo",
+              minValue,
+              maxValue,
             } as LayerSettingsFoxgloveGrid,
           },
           layers: {
@@ -256,24 +270,16 @@ function Foxglove_Grid_Uint8(): JSX.Element {
     </PanelSetup>
   );
 }
-function rgba(r: number, g: number, b: number, a: number) {
-  return (
-    (Math.trunc(r * 255) << 24) |
-    (Math.trunc(g * 255) << 16) |
-    (Math.trunc(b * 255) << 8) |
-    Math.trunc(a * 255)
-  );
-}
 
 function f(x: number, y: number, size = 128) {
   return (x / size - 0.5) ** 2 + (y / size - 0.5) ** 2;
 }
-function jet(x: number, a: number): number {
+function jet(x: number, a: number) {
   const i = Math.trunc(x * 255);
   const r = Math.max(0, Math.min(255, 4 * (i - 96), 255 - 4 * (i - 224)));
   const g = Math.max(0, Math.min(255, 4 * (i - 32), 255 - 4 * (i - 160)));
   const b = Math.max(0, Math.min(255, 4 * i + 127, 255 - 4 * (i - 96)));
-  return rgba(r / 255, g / 255, b / 255, a);
+  return { r, g, b, a: (a * 255) | 0 };
 }
 function Foxglove_Grid_RGBA(): JSX.Element {
   const topics: Topic[] = [
@@ -319,7 +325,11 @@ function Foxglove_Grid_RGBA(): JSX.Element {
   for (let i = 0; i < rowCount; i++) {
     for (let j = 0; j < column_count; j++) {
       const offset = i * column_count + j;
-      view.setUint32(offset * 4, jet(f(i, j) * 2, i / rowCount), true);
+      const { r, g, b, a } = jet(f(i, j) * 2, i / rowCount);
+      view.setUint8(offset * 4 + 0, r);
+      view.setUint8(offset * 4 + 1, g);
+      view.setUint8(offset * 4 + 2, b);
+      view.setUint8(offset * 4 + 3, a);
     }
   }
   const cell_size = {
@@ -345,7 +355,12 @@ function Foxglove_Grid_RGBA(): JSX.Element {
       column_count,
       cell_stride,
       row_stride,
-      fields: [{ name: "color", offset: 0, type: NumericType.UINT32 }],
+      fields: [
+        { name: "red", offset: 0, type: NumericType.UINT8 },
+        { name: "green", offset: 1, type: NumericType.UINT8 },
+        { name: "blue", offset: 2, type: NumericType.UINT8 },
+        { name: "alpha", offset: 3, type: NumericType.UINT8 },
+      ],
       data,
     },
     sizeInBytes: 0,
@@ -371,8 +386,8 @@ function Foxglove_Grid_RGBA(): JSX.Element {
           topics: {
             "/grid": {
               visible: true,
-              colorField: "color",
-              colorMode: "rgba",
+              colorField: "red",
+              colorMode: "rgba-fields",
             } as LayerSettingsFoxgloveGrid,
           },
           layers: {
@@ -396,7 +411,13 @@ function Foxglove_Grid_RGBA(): JSX.Element {
   );
 }
 
-function Foxglove_Grid_Float(): JSX.Element {
+function Foxglove_Grid_Float({
+  minValue,
+  maxValue,
+}: {
+  minValue?: number;
+  maxValue?: number;
+}): JSX.Element {
   const topics: Topic[] = [
     { name: "/grid", schemaName: "foxglove.Grid" },
     { name: "/tf", schemaName: "geometry_msgs/TransformStamped" },
@@ -495,8 +516,8 @@ function Foxglove_Grid_Float(): JSX.Element {
               colorField: "height",
               colorMode: "gradient",
               gradient: ["#ffffffFF", "#ff00bb80"],
-              minValue: -0.25,
-              maxValue: 0.25,
+              minValue: minValue ?? -0.25,
+              maxValue: maxValue ?? 0.25,
             } as LayerSettingsFoxgloveGrid,
           },
           layers: {
@@ -644,6 +665,12 @@ function Row_Stride_Grid(): JSX.Element {
   );
 }
 export const Foxglove_Grid_Uint8_Values = (): JSX.Element => <Foxglove_Grid_Uint8 />;
+export const Foxglove_Grid_Uint8_Values_Clamped = (): JSX.Element => (
+  <Foxglove_Grid_Uint8 minValue={30} maxValue={80} />
+);
 export const Foxglove_Grid_RGBA_Values = (): JSX.Element => <Foxglove_Grid_RGBA />;
 export const Foxglove_Grid_Float_Values = (): JSX.Element => <Foxglove_Grid_Float />;
+export const Foxglove_Grid_Float_Values_Clamped = (): JSX.Element => (
+  <Foxglove_Grid_Float minValue={0.05} maxValue={0.1} />
+);
 export const Foxglove_Grid_Padded_Row = (): JSX.Element => <Row_Stride_Grid />;

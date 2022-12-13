@@ -80,7 +80,7 @@ import { useInitialDeepLinkState } from "@foxglove/studio-base/hooks/useInitialD
 import useNativeAppMenuEvent from "@foxglove/studio-base/hooks/useNativeAppMenuEvent";
 import { PlayerPresence } from "@foxglove/studio-base/players/types";
 import { HelpInfoStore, useHelpInfo } from "@foxglove/studio-base/providers/HelpInfoProvider";
-import { PanelSettingsEditorContextProvider } from "@foxglove/studio-base/providers/PanelSettingsEditorContextProvider";
+import { PanelStateContextProvider } from "@foxglove/studio-base/providers/PanelStateContextProvider";
 
 const log = Logger.getLogger(__filename);
 
@@ -360,7 +360,9 @@ export default function Workspace(props: WorkspaceProps): JSX.Element {
   const installExtension = useExtensionCatalog((state) => state.installExtension);
 
   const openHandle = useCallback(
-    async (handle: FileSystemFileHandle) => {
+    async (
+      handle: FileSystemFileHandle /* foxglove-depcheck-used: @types/wicg-file-system-access */,
+    ) => {
       log.debug("open handle", handle);
       const file = await handle.getFile();
       // electron extends File with a `path` field which is not available in browsers
@@ -594,7 +596,7 @@ export default function Workspace(props: WorkspaceProps): JSX.Element {
         /* eslint-disable react/jsx-key */
         <LinkHandlerContext.Provider value={handleInternalLink} />,
         <WorkspaceContext.Provider value={workspaceActions} />,
-        <PanelSettingsEditorContextProvider />,
+        <PanelStateContextProvider />,
         /* eslint-enable react/jsx-key */
       ]}
     >

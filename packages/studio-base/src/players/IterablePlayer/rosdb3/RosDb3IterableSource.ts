@@ -80,7 +80,7 @@ export class RosDb3IterableSource implements IIterableSource {
         problems.push({
           severity: "warn",
           message: `Topic "${topicDef.name}" has unsupported datatype "${topicDef.type}"`,
-          tip: "ROS 2 .db3 files do not contain message definitions, so only well-known ROS types are supported in Foxglove Studio. As a workaround, you can convert the db3 file to mcap using the mcap CLI. For more information, see: https://foxglove.dev/docs/studio/connection/local-file",
+          tip: "ROS 2 .db3 files do not contain message definitions, so only well-known ROS types are supported in Foxglove Studio. As a workaround, you can convert the db3 file to mcap using the mcap CLI. For more information, see: https://foxglove.dev/docs/studio/connection/ros2",
         });
         continue;
       }
@@ -132,6 +132,7 @@ export class RosDb3IterableSource implements IIterableSource {
     });
     for await (const msg of msgIterator) {
       yield {
+        type: "message-event",
         msgEvent: {
           topic: msg.topic.name,
           receiveTime: msg.timestamp,
@@ -139,8 +140,6 @@ export class RosDb3IterableSource implements IIterableSource {
           sizeInBytes: msg.data.byteLength,
           schemaName: msg.topic.type,
         },
-        connectionId: undefined,
-        problem: undefined,
       };
     }
   }
