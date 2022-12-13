@@ -34,6 +34,7 @@ export const Unconfigured = (): JSX.Element => {
 export const WithSettings = (): JSX.Element => {
   return <TeleopPanel overrideConfig={{ topic: "/abc" }} />;
 };
+
 WithSettings.parameters = {
   colorScheme: "light",
   includeSettings: true,

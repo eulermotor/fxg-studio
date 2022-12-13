@@ -42,7 +42,9 @@ import topicGraphThumbnail from "./TopicGraph/thumbnail.png";
 import URDFViewerHelp from "./URDFViewer/index.help.md";
 import URDFViewerThumbnail from "./URDFViewer/thumbnail.png";
 import VariableSliderHelp from "./VariableSlider/index.help.md";
+import AutowareHelp from "./Autoware/index.help.md";
 import variableSliderThumbnail from "./VariableSlider/thumbnail.png";
+import autowareThumbnail from "./Autoware/thumbnail.png";
 import DiagnosticStatusPanelHelp from "./diagnostics/DiagnosticStatusPanel.help.md";
 import DiagnosticSummaryHelp from "./diagnostics/DiagnosticSummary.help.md";
 import diagnosticStatusThumbnail from "./diagnostics/thumbnails/diagnostic-status.png";
@@ -201,6 +203,14 @@ const builtin: PanelInfo[] = [
     help: VariableSliderHelp,
     thumbnail: variableSliderThumbnail,
     module: async () => await import("./VariableSlider"),
+  },
+  {
+    title: "Autoware",
+    type: "GlobalAutowarePanel",
+    description: "Autoware control panel.",
+    help: AutowareHelp,
+    thumbnail: autowareThumbnail,
+    module: async () => await import("./Autoware"),
   },
   {
     title: "User Scripts",
