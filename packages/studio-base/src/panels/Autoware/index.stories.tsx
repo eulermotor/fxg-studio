@@ -11,34 +11,33 @@
 //   found at http://www.apache.org/licenses/LICENSE-2.0
 //   You may not use this file except in compliance with the License.
 
-import AutowarePanel from "./index";
-import PanelSetup from "@foxglove/studio-base/stories/PanelSetup";
+// import { action } from "@storybook/addon-actions";
 import { Story, StoryContext } from "@storybook/react";
-import { PlayerCapabilities } from "@foxglove/studio-base/players/types";
-import { action } from "@storybook/addon-actions";
 
-const fixture = {
-  topics: [],
-  datatypes: new Map(
-    Object.entries({
-      Foo: { definitions: [] },
-    }),
-  ),
-  frame: {},
-  capabilities: [],
-  globalVariables: { globalVariable: 3.5 },
-};
+// import { PlayerCapabilities } from "@foxglove/studio-base/players/types";
+import PanelSetup from "@foxglove/studio-base/stories/PanelSetup";
+
+import AutowarePanel from "./index";
+
+// const fixture = {
+//   topics: [],
+//   datatypes: new Map(
+//     Object.entries({
+//       Foo: { definitions: [] },
+//     }),
+//   ),
+//   frame: {},
+//   capabilities: [],
+//   globalVariables: { globalVariable: 3.5 },
+// };
 
 export default {
   title: "panels/Autoware",
   component: AutowarePanel,
   decorators: [
-    (StoryComponent: Story, context: StoryContext): JSX.Element => {
+    (StoryComponent: Story, { parameters }: StoryContext): JSX.Element => {
       return (
-        <PanelSetup
-          fixture={{ capabilities: [PlayerCapabilities.advertise], publish: action("publish") }}
-          includeSettings={context.parameters.includeSettings}
-        >
+        <PanelSetup fixture={parameters.panelSetup?.fixture}>
           <StoryComponent />
         </PanelSetup>
       );
@@ -46,33 +45,19 @@ export default {
   ],
 };
 
-export function Example(): JSX.Element {
-  return (
-    <PanelSetup fixture={fixture}>
-      <AutowarePanel />
-    </PanelSetup>
-  );
-}
+export const Unconfigured = (): JSX.Element => {
+  return <AutowarePanel />;
+};
 
-export function NarrowLayout(): JSX.Element {
-  return (
-    <PanelSetup fixture={fixture}>
-      <div style={{ width: 400 }}>
-        <AutowarePanel />
-      </div>
-    </PanelSetup>
-  );
-}
-
-export function WithSettings(): JSX.Element {
-  return (
-    <PanelSetup fixture={fixture} includeSettings>
-      <AutowarePanel />
-    </PanelSetup>
-  );
-}
+export const WithSettings = (): JSX.Element => {
+  return <AutowarePanel overrideConfig={{ topic: "/abc" }} />;
+};
 
 WithSettings.parameters = {
   colorScheme: "light",
   includeSettings: false,
+};
+
+export const WithTopic = (): JSX.Element => {
+  return <AutowarePanel overrideConfig={{ topic: "/abc" }} />;
 };

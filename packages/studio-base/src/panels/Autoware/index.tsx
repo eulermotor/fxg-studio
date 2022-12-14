@@ -11,20 +11,17 @@
 //   found at http://www.apache.org/licenses/LICENSE-2.0
 //   You may not use this file except in compliance with the License.
 
+import { StrictMode } from "react";
 import ReactDOM from "react-dom";
 
 import { PanelExtensionContext } from "@foxglove/studio";
 import Panel from "@foxglove/studio-base/components/Panel";
-import { StrictMode } from "react";
 import { PanelExtensionAdapter } from "@foxglove/studio-base/components/PanelExtensionAdapter";
-import { AutowareConfig } from "./types";
-
 import { SaveConfig } from "@foxglove/studio-base/types/panels";
 
 import AutowarePanel from "./AutowarePanel";
 import helpContent from "./index.help.md";
-
-export const defaultConfig: AutowareConfig = {};
+// import { Config } from "./types";
 
 function initPanel(context: PanelExtensionContext) {
   ReactDOM.render(
@@ -33,7 +30,6 @@ function initPanel(context: PanelExtensionContext) {
     </StrictMode>,
     context.panelElement,
   );
-
   return () => {
     ReactDOM.unmountComponentAtNode(context.panelElement);
   };
@@ -56,6 +52,6 @@ function AutowarePanelAdapter(props: Props) {
 }
 
 AutowarePanelAdapter.panelType = "Autoware";
-AutowarePanelAdapter.defaultConfig = defaultConfig;
+AutowarePanelAdapter.defaultConfig = {};
 
 export default Panel(AutowarePanelAdapter);

@@ -11,12 +11,13 @@
 //   found at http://www.apache.org/licenses/LICENSE-2.0
 //   You may not use this file except in compliance with the License.
 
-import Stack from "@foxglove/studio-base/components/Stack";
-import helpContent from "./index.help.md";
-import PanelToolbar from "@foxglove/studio-base/components/PanelToolbar";
+import { Button } from "@mui/material";
 
 import { PanelExtensionContext } from "@foxglove/studio";
-import { Button } from "@mui/material";
+import PanelToolbar from "@foxglove/studio-base/components/PanelToolbar";
+import Stack from "@foxglove/studio-base/components/Stack";
+
+import helpContent from "./index.help.md";
 
 type AutowarePanelProps = {
   context: PanelExtensionContext;

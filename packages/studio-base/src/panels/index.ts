@@ -4,6 +4,8 @@
 import { PanelInfo } from "@foxglove/studio-base/context/PanelCatalogContext";
 import { TAB_PANEL_TYPE } from "@foxglove/studio-base/util/globalConstants";
 
+import AutowareHelp from "./Autoware/index.help.md";
+import autowareThumbnail from "./Autoware/thumbnail.png";
 import DataSourceInfoHelp from "./DataSourceInfo/index.help.md";
 import dataSourceInfoThumbnail from "./DataSourceInfo/thumbnail.png";
 import GaugeHelp from "./Gauge/index.help.md";
@@ -42,9 +44,7 @@ import topicGraphThumbnail from "./TopicGraph/thumbnail.png";
 import URDFViewerHelp from "./URDFViewer/index.help.md";
 import URDFViewerThumbnail from "./URDFViewer/thumbnail.png";
 import VariableSliderHelp from "./VariableSlider/index.help.md";
-import AutowareHelp from "./Autoware/index.help.md";
 import variableSliderThumbnail from "./VariableSlider/thumbnail.png";
-import autowareThumbnail from "./Autoware/thumbnail.png";
 import DiagnosticStatusPanelHelp from "./diagnostics/DiagnosticStatusPanel.help.md";
 import DiagnosticSummaryHelp from "./diagnostics/DiagnosticSummary.help.md";
 import diagnosticStatusThumbnail from "./diagnostics/thumbnails/diagnostic-status.png";
@@ -206,7 +206,7 @@ const builtin: PanelInfo[] = [
   },
   {
     title: "Autoware",
-    type: "GlobalAutowarePanel",
+    type: "Autoware",
     description: "Autoware control panel.",
     help: AutowareHelp,
     thumbnail: autowareThumbnail,
