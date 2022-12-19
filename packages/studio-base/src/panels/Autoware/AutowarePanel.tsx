@@ -1,23 +1,13 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
-//
-// This file incorporates work covered by the following copyright and
-// permission notice:
-//
-//   Copyright 2019-2021 Cruise LLC
-//
-//   This source code is licensed under the Apache License, Version 2.0,
-//   found at http://www.apache.org/licenses/LICENSE-2.0
-//   You may not use this file except in compliance with the License.
 
 import { Button } from "@mui/material";
+import { useLayoutEffect, useState } from "react";
 
-import { PanelExtensionContext } from "@foxglove/studio";
-import PanelToolbar from "@foxglove/studio-base/components/PanelToolbar";
+import { PanelExtensionContext, Topic } from "@foxglove/studio";
 import Stack from "@foxglove/studio-base/components/Stack";
-
-import helpContent from "./index.help.md";
+import ThemeProvider from "@foxglove/studio-base/theme/ThemeProvider";
 
 type AutowarePanelProps = {
   context: PanelExtensionContext;
@@ -25,29 +15,48 @@ type AutowarePanelProps = {
 
 function AutowarePanel(props: AutowarePanelProps): JSX.Element {
   const { context } = props;
+  // const { saveState } = context;
+
+  const [topics, setTopics] = useState<readonly Topic[]>([]);
+
+  // setup context render handler and render done handling
+  const [renderDone, setRenderDone] = useState<() => void>(() => () => {});
+  const [colorScheme, setColorScheme] = useState<"dark" | "light">("light");
+
+  useLayoutEffect(() => {
+    context.watch("topics");
+    context.watch("colorScheme");
+    context.onRender = (renderState, done) => {
+      setTopics(renderState.topics ?? []);
+      setRenderDone(() => done);
+      if (renderState.colorScheme) {
+        setColorScheme(renderState.colorScheme);
+      }
+    };
+  }, [context]);
+
+  const testPublish = () => {
+    context.publish?.("/topic", {});
+    console.log("done");
+  };
+
+  useLayoutEffect(() => {
+    renderDone();
+  }, [renderDone]);
 
   return (
-    <Stack fullHeight>
-      <PanelToolbar helpContent={helpContent} />
+    <ThemeProvider isDark={colorScheme === "dark"}>
       <Stack
-        flex="auto"
-        alignItems="center"
-        justifyContent="center"
         fullHeight
-        gap={2}
-        paddingY={2}
-        paddingX={3}
+        justifyContent="center"
+        alignItems="center"
+        style={{ padding: "min(5%, 8px)", textAlign: "center" }}
       >
-        <Button
-          onClick={() => {
-            console.log("click done...");
-          }}
-          variant="outlined"
-        >
-          Autoware development.
+        <Button onClick={() => testPublish()} variant="outlined">
+          Engage autoware
         </Button>
       </Stack>
-    </Stack>
+    </ThemeProvider>
   );
 }
 

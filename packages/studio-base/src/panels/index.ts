@@ -5,7 +5,7 @@ import { PanelInfo } from "@foxglove/studio-base/context/PanelCatalogContext";
 import { TAB_PANEL_TYPE } from "@foxglove/studio-base/util/globalConstants";
 
 import AutowareHelp from "./Autoware/index.help.md";
-import autowareThumbnail from "./Autoware/thumbnail.png";
+import AutowareThumbnail from "./Autoware/thumbnail.png";
 import DataSourceInfoHelp from "./DataSourceInfo/index.help.md";
 import dataSourceInfoThumbnail from "./DataSourceInfo/thumbnail.png";
 import GaugeHelp from "./Gauge/index.help.md";
@@ -109,6 +109,14 @@ const builtin: PanelInfo[] = [
     module: async () => await import("./Teleop"),
   },
   {
+    title: "Autoware",
+    type: "Autoware",
+    description: "Remote autoware control center using AD API.",
+    help: AutowareHelp,
+    thumbnail: AutowareThumbnail,
+    module: async () => await import("./Autoware"),
+  },
+  {
     title: "Map",
     type: "map",
     description: "Display points on a map.",
@@ -203,14 +211,6 @@ const builtin: PanelInfo[] = [
     help: VariableSliderHelp,
     thumbnail: variableSliderThumbnail,
     module: async () => await import("./VariableSlider"),
-  },
-  {
-    title: "Autoware",
-    type: "Autoware",
-    description: "Autoware control panel.",
-    help: AutowareHelp,
-    thumbnail: autowareThumbnail,
-    module: async () => await import("./Autoware"),
   },
   {
     title: "User Scripts",
