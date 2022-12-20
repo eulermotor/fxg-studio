@@ -11,7 +11,7 @@ import { useEffect } from "react";
 import { DirectionalPadAction } from "@foxglove/studio-base/panels/Teleop/DirectionalPad";
 import { JOYSTICK_CHANGE_THRESHOLD } from "@foxglove/studio-base/panels/Teleop/constants";
 
-type JoystickControllerProps = {
+type LogitechG29ControllerProps = {
   handleVehicleMovement: (
     key: DirectionalPadAction | number,
     linearVelocity: number,
@@ -19,7 +19,7 @@ type JoystickControllerProps = {
   ) => void;
 };
 
-function JoyStickController(props: JoystickControllerProps): JSX.Element {
+function LogitechG29Controller(props: LogitechG29ControllerProps): JSX.Element {
   const { handleVehicleMovement } = props;
 
   let linearVelocity: number = 0,
@@ -47,11 +47,12 @@ function JoyStickController(props: JoystickControllerProps): JSX.Element {
         return;
       }
 
-      let linear = newGamepad && newGamepad.axes ? newGamepad.axes[1] : 0;
+      let linear = newGamepad && newGamepad.axes ? newGamepad.axes[2] : 0;
       let angular = newGamepad && newGamepad.axes ? newGamepad.axes[0] : 0;
 
       linear = linear ? -parseFloat(linear.toFixed(2)) : 0;
-      angular = angular ? -parseFloat(angular.toFixed(2)) : 0;
+      linear = linear > 0 ? linear : 0;
+      angular = angular ? parseFloat(angular.toFixed(2)) : 0;
 
       handleDeduplication(linear, angular);
     })();
@@ -63,4 +64,4 @@ function JoyStickController(props: JoystickControllerProps): JSX.Element {
   return <></>;
 }
 
-export default JoyStickController;
+export default LogitechG29Controller;

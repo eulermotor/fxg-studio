@@ -36,7 +36,7 @@ function AutowarePanel(props: AutowarePanelProps): JSX.Element {
   }, [context]);
 
   const testPublish = () => {
-    context.publish?.("/topic", {});
+    context.publish?.("/autoware/engage", {engage: true});
     console.log("done");
   };
 

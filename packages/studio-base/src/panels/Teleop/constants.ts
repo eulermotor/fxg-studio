@@ -1,4 +1,4 @@
-export const ACCELERATION_SENITIVITY = 1.4;
+export const ACCELERATION_SENSITIVITY = 1.4;
 export const TURNING_SENSITIVITY = 2;
 export const BREAK_SENSITIVITY = 2;
 

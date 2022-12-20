@@ -7,7 +7,7 @@ import { useLayoutEffect } from "react";
 import { DirectionalPadAction } from "@foxglove/studio-base/panels/Teleop/DirectionalPad";
 
 import {
-  ACCELERATION_SENITIVITY,
+  ACCELERATION_SENSITIVITY,
   BASE_KICKSTART_FROM_REST,
   BREAKING_INTERVAL,
   BREAK_SENSITIVITY,
@@ -97,7 +97,7 @@ function TeleopKeyboardFeature(props: TeleopKeyboardFeatureProps): JSX.Element {
         // activate front movement;
         setLinearVelocity(BASE_KICKSTART_FROM_REST);
       } else {
-        setLinearVelocity(Math.min(FRONT_MAX_SPEED, linearVelocity * ACCELERATION_SENITIVITY));
+        setLinearVelocity(Math.min(FRONT_MAX_SPEED, linearVelocity * ACCELERATION_SENSITIVITY));
       }
     };
 
@@ -117,7 +117,7 @@ function TeleopKeyboardFeature(props: TeleopKeyboardFeatureProps): JSX.Element {
       } else if (linearVelocity === 0) {
         setLinearVelocity(-BASE_KICKSTART_FROM_REST);
       } else {
-        setLinearVelocity(Math.max(REVERSE_MAX_SPEED, linearVelocity * ACCELERATION_SENITIVITY));
+        setLinearVelocity(Math.max(REVERSE_MAX_SPEED, linearVelocity * ACCELERATION_SENSITIVITY));
       }
     };
 
@@ -232,7 +232,7 @@ function TeleopKeyboardFeature(props: TeleopKeyboardFeatureProps): JSX.Element {
 type TeleopKeyboardFeatureProps = {
   handleVehicleMovement: (
     key: DirectionalPadAction | number,
-    linearVelcity: number,
+    linearVelocity: number,
     angularVelocity: number,
   ) => void;
 };
