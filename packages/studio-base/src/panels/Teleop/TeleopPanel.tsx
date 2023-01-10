@@ -6,7 +6,7 @@ import { set } from "lodash";
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { DeepPartial } from "ts-essentials";
 
-import { ros1 } from "@foxglove/rosmsg-msgs-common";
+import Log from "@foxglove/log";
 import {
   PanelExtensionContext,
   SettingsTreeAction,
@@ -16,6 +16,11 @@ import {
 } from "@foxglove/studio";
 import EmptyState from "@foxglove/studio-base/components/EmptyState";
 import Stack from "@foxglove/studio-base/components/Stack";
+import {
+  autowareAdvertisableTopicsList,
+  AUTOWARE_MSG,
+  GEAR_CMD_ENUM,
+} from "@foxglove/studio-base/panels/Autoware/messages";
 import DirectionalPad, {
   DirectionalPadAction,
 } from "@foxglove/studio-base/panels/Teleop/DirectionalPad";
@@ -24,6 +29,9 @@ import DirectionalPad, {
 import LogitechG29Controller from "@foxglove/studio-base/panels/Teleop/LogitechG29Controller";
 import {
   DEFAULT_TELEOP_MODE,
+  DEFAULT_TOPIC_TYPE,
+  FORCE_LOCAL_CONTROL,
+  REST_THRESHOLD,
   TELEOPERATION_MODES,
 } from "@foxglove/studio-base/panels/Teleop/constants";
 import ThemeProvider from "@foxglove/studio-base/theme/ThemeProvider";
@@ -51,6 +59,8 @@ type Config = {
   defaultOperatingMode: { field: string; value: string };
   operationModeOptions: { field: string; value: string[] };
 };
+
+const log = Log.getLogger(__filename);
 
 function buildSettingsTree(config: Config, topics: readonly Topic[]): SettingsTreeNodes {
   const general: SettingsTreeNode = {
@@ -132,7 +142,7 @@ function buildSettingsTree(config: Config, topics: readonly Topic[]): SettingsTr
   return { general, operationMode };
 }
 
-const defaultMessage = (speed?: number, direction?: number) => {
+const getTwistMessage = (speed?: number, direction?: number) => {
   return {
     linear: {
       x: speed != undefined ? speed : 0,
@@ -143,6 +153,28 @@ const defaultMessage = (speed?: number, direction?: number) => {
       x: 0,
       y: 0,
       z: direction != undefined ? direction : 0,
+    },
+  };
+};
+
+const getAckermannControlCommand = (lv: number, av: number) => {
+  const stamp = {
+    sec: 0,
+    nanosec: 0,
+  };
+
+  return {
+    stamp,
+    lateral: {
+      stamp,
+      steering_tire_angle: av * 90,
+      steering_tire_rotation_rate: 0,
+    },
+    longitudinal: {
+      stamp,
+      speed: lv * 72,
+      acceleration: Math.min(lv * 1.5, 1),
+      jerk: 0,
     },
   };
 };
@@ -163,7 +195,7 @@ function TeleopPanel(props: TeleopPanelProps): JSX.Element {
     const partialConfig = context.initialState as DeepPartial<Config>;
 
     const {
-      topic,
+      topic = AUTOWARE_MSG.CONTROL,
       publishRate = 1,
       upButton: { field: upField = "linear-x", value: upValue = 1 } = {},
       downButton: { field: downField = "linear-x", value: downValue = -1 } = {},
@@ -235,16 +267,24 @@ function TeleopPanel(props: TeleopPanelProps): JSX.Element {
       return;
     }
 
-    context.advertise?.(currentTopic, "geometry_msgs/Twist", {
-      datatypes: new Map([
-        ["geometry_msgs/Vector3", ros1["geometry_msgs/Vector3"]],
-        ["geometry_msgs/Twist", ros1["geometry_msgs/Twist"]],
-      ]),
-    });
+    const currentTopicType =
+      topics.find((el) => el.name === currentTopic)?.schemaName ?? DEFAULT_TOPIC_TYPE;
+    context.advertise?.(currentTopic, currentTopicType);
+
+    const gearCmdMessage = autowareAdvertisableTopicsList.find(
+      (topic) => topic.topic === AUTOWARE_MSG.GEAR_CMD,
+    );
+    if (gearCmdMessage) {
+      context.advertise?.(gearCmdMessage.topic, gearCmdMessage.schemaName);
+    }
 
     return () => {
       context.unadvertise?.(currentTopic);
+      if (gearCmdMessage) {
+        context.unadvertise?.(gearCmdMessage.topic);
+      }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [context, currentTopic]);
 
   useLayoutEffect(() => {
@@ -252,7 +292,16 @@ function TeleopPanel(props: TeleopPanelProps): JSX.Element {
       return;
     }
 
-    const message = { ...defaultMessage(_linearVelocity, _angularVelocity) };
+    let message = {};
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    if (FORCE_LOCAL_CONTROL) {
+      message = getTwistMessage(_linearVelocity, _angularVelocity);
+    } else if (topics.find((el) => el.name === currentTopic)?.schemaName === DEFAULT_TOPIC_TYPE) {
+      message = getTwistMessage(_linearVelocity, _angularVelocity);
+    } else {
+      message = getAckermannControlCommand(_linearVelocity, _angularVelocity);
+    }
+
     // don't publish if rate is 0 or negative - this is a config error on user's part
     if (config.publishRate <= 0) {
       return;
@@ -260,9 +309,17 @@ function TeleopPanel(props: TeleopPanelProps): JSX.Element {
 
     const intervalMs = (1000 * 1) / config.publishRate;
     context.publish?.(currentTopic, message);
+    if (_linearVelocity > REST_THRESHOLD) {
+      context.publish?.(AUTOWARE_MSG.GEAR_CMD, GEAR_CMD_ENUM.DRIVE);
+    } else {
+      context.publish?.(AUTOWARE_MSG.GEAR_CMD, GEAR_CMD_ENUM.NEUTRAL);
+    }
+
     const intervalHandle = setInterval(() => {
       context.publish?.(currentTopic, message);
     }, intervalMs);
+
+    log.info("[PUBLISH] - ", message);
 
     return () => {
       clearInterval(intervalHandle);
@@ -283,8 +340,6 @@ function TeleopPanel(props: TeleopPanelProps): JSX.Element {
     linearVelocity: number,
     angularVelocity: number,
   ) => {
-    // eslint-disable-next-line no-restricted-syntax
-    console.log("[publish] - ", linearVelocity, angularVelocity);
     setLinearVelocity(linearVelocity);
     setAngularVelocity(angularVelocity);
     setDoesVehicleStateChange(Math.random() * Math.random() * Math.random());
@@ -301,7 +356,7 @@ function TeleopPanel(props: TeleopPanelProps): JSX.Element {
       >
         {!canPublish && (
           <EmptyState>
-            Please connect to a datasource that supports publishing in order to use this panel
+            Please connect to a data source that supports publishing in order to use this panel
           </EmptyState>
         )}
 
