@@ -45,6 +45,8 @@ import URDFViewerHelp from "./URDFViewer/index.help.md";
 import URDFViewerThumbnail from "./URDFViewer/thumbnail.png";
 import VariableSliderHelp from "./VariableSlider/index.help.md";
 import variableSliderThumbnail from "./VariableSlider/thumbnail.png";
+import WebrtcHelp from "./WebRTC/index.help.md";
+import WebrtcThumbnail from "./WebRTC/thumbnail.png";
 import DiagnosticStatusPanelHelp from "./diagnostics/DiagnosticStatusPanel.help.md";
 import DiagnosticSummaryHelp from "./diagnostics/DiagnosticSummary.help.md";
 import diagnosticStatusThumbnail from "./diagnostics/thumbnails/diagnostic-status.png";
@@ -115,6 +117,14 @@ const builtin: PanelInfo[] = [
     help: AutowareHelp,
     thumbnail: AutowareThumbnail,
     module: async () => await import("./Autoware"),
+  },
+  {
+    title: "WebRTC Stream",
+    type: "WebRTC Stream",
+    description: "Connect to a remote WebRTC server.",
+    help: WebrtcHelp,
+    thumbnail: WebrtcThumbnail,
+    module: async () => await import("./WebRTC"),
   },
   {
     title: "Map",
