@@ -25,7 +25,6 @@ import AppConfigurationContext, { IAppConfiguration } from "./context/AppConfigu
 import { AssetsProvider } from "./context/AssetsContext";
 import ConsoleApiContext from "./context/ConsoleApiContext";
 import LayoutStorageContext from "./context/LayoutStorageContext";
-import ModalHost from "./context/ModalHost";
 import NativeAppMenuContext, { INativeAppMenu } from "./context/NativeAppMenuContext";
 import NativeWindowContext, { INativeWindow } from "./context/NativeWindowContext";
 import { IDataSourceFactory } from "./context/PlayerSelectionContext";
@@ -36,7 +35,6 @@ import ConsoleApiRemoteLayoutStorageProvider from "./providers/ConsoleApiRemoteL
 import CurrentLayoutProvider from "./providers/CurrentLayoutProvider";
 import ExtensionCatalogProvider from "./providers/ExtensionCatalogProvider";
 import ExtensionMarketplaceProvider from "./providers/ExtensionMarketplaceProvider";
-import HelpInfoProvider from "./providers/HelpInfoProvider";
 import LayoutManagerProvider from "./providers/LayoutManagerProvider";
 import PanelCatalogProvider from "./providers/PanelCatalogProvider";
 import UserProfileLocalStorageProvider from "./providers/UserProfileLocalStorageProvider";
@@ -59,6 +57,7 @@ type AppProps = {
   enableDialogAuth?: boolean;
   enableLaunchPreferenceScreen?: boolean;
   enableGlobalCss?: boolean;
+  appBarLeftInset?: number;
 };
 
 // Suppress context menu for the entire app except on inputs & textareas.
@@ -105,9 +104,7 @@ export function App(props: AppProps): JSX.Element {
     <UserProfileLocalStorageProvider />,
     <AnalyticsProvider amplitudeApiKey={process.env.AMPLITUDE_API_KEY} />,
     <LayoutManagerProvider />,
-    <ModalHost />, // render modal elements inside the ThemeProvider
     <AssetsProvider loaders={assetLoaders} />,
-    <HelpInfoProvider />,
     <TimelineInteractionStateProvider />,
     <UserNodeStateProvider />,
     <CurrentLayoutProvider />,
@@ -146,7 +143,11 @@ export function App(props: AppProps): JSX.Element {
                 <DndProvider backend={HTML5Backend}>
                   <Suspense fallback={<></>}>
                     <PanelCatalogProvider>
-                      <Workspace deepLinks={deepLinks} disableSignin={disableSignin} />
+                      <Workspace
+                        deepLinks={deepLinks}
+                        disableSignin={disableSignin}
+                        appBarLeftInset={props.appBarLeftInset}
+                      />
                     </PanelCatalogProvider>
                   </Suspense>
                 </DndProvider>
