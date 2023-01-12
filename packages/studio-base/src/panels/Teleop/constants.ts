@@ -22,10 +22,12 @@ export const BREAKING_INTERVAL = 100;
 export const DEFAULT_TELEOP_MODE = "Joystick";
 export const TELEOPERATION_MODES = ["Joystick"];
 
-export const JOYSTICK_CHANGE_THRESHOLD = 0.05;
+export const DEDUPLICATION_THRESHOLD = 0.04;
 
 export const JOYSTICK_REST_THRESHOLD = 0.2;
 
 export const DEFAULT_TOPIC_TYPE = "geometry_msgs/Twist";
 
-export const FORCE_LOCAL_CONTROL = false;
+export const FORCE_LOCAL_CONTROL = true;
+
+export const MAX_VEHICLE_SPEED = 30;

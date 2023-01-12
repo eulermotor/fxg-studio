@@ -9,7 +9,7 @@
 import { useEffect } from "react";
 
 import { DirectionalPadAction } from "@foxglove/studio-base/panels/Teleop/DirectionalPad";
-import { JOYSTICK_CHANGE_THRESHOLD } from "@foxglove/studio-base/panels/Teleop/constants";
+import { DEDUPLICATION_THRESHOLD } from "@foxglove/studio-base/panels/Teleop/constants";
 
 type JoystickControllerProps = {
   handleVehicleMovement: (
@@ -29,7 +29,7 @@ function JoyStickController(props: JoystickControllerProps): JSX.Element {
 
   useEffect(() => {
     const didChange = (Ov: number, Nv: number): boolean => {
-      return parseFloat(Math.abs(Ov - Nv).toFixed(2)) > JOYSTICK_CHANGE_THRESHOLD;
+      return parseFloat(Math.abs(Ov - Nv).toFixed(2)) > DEDUPLICATION_THRESHOLD;
     };
 
     const handleDeduplication = (Lv: number, Av: number): void => {

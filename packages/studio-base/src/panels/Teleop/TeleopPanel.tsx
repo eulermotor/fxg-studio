@@ -2,8 +2,9 @@
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
+import { Grid, Typography } from "@mui/material";
 import { set } from "lodash";
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { FC, useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { DeepPartial } from "ts-essentials";
 
 import Log from "@foxglove/log";
@@ -31,6 +32,7 @@ import {
   DEFAULT_TELEOP_MODE,
   DEFAULT_TOPIC_TYPE,
   FORCE_LOCAL_CONTROL,
+  MAX_VEHICLE_SPEED,
   REST_THRESHOLD,
   TELEOPERATION_MODES,
 } from "@foxglove/studio-base/panels/Teleop/constants";
@@ -61,6 +63,32 @@ type Config = {
 };
 
 const log = Log.getLogger(__filename);
+
+type MetaInfoCardProps = { title: string; value: string | number; theme: string };
+const MetaInfoCard: FC<MetaInfoCardProps> = (props) => {
+  const { title, value, theme } = props;
+  const white = "#fff";
+
+  const cardStyle = {
+    borderRadius: "4px 4px",
+    padding: "10px 5px",
+    background: theme === "dark" ? white : "#27272b",
+    color: theme === "dark" ? "#000" : white,
+    maxWidth: "320px",
+    margin: "auto auto",
+  };
+
+  return (
+    <div style={cardStyle}>
+      <Typography variant="h3" component="h6">
+        {value}
+      </Typography>
+      <Typography variant="body1" component="h4">
+        <strong style={{ color: theme === "dark" ? "#27272b" : white }}>{title}</strong>
+      </Typography>
+    </div>
+  );
+};
 
 function buildSettingsTree(config: Config, topics: readonly Topic[]): SettingsTreeNodes {
   const general: SettingsTreeNode = {
@@ -319,7 +347,8 @@ function TeleopPanel(props: TeleopPanelProps): JSX.Element {
       context.publish?.(currentTopic, message);
     }, intervalMs);
 
-    log.info("[PUBLISH] - ", message);
+    // log.info("[PUBLISH] - ", message);
+    log.info("[PUBLISH] - ", _linearVelocity, _angularVelocity);
 
     return () => {
       clearInterval(intervalHandle);
@@ -364,10 +393,27 @@ function TeleopPanel(props: TeleopPanelProps): JSX.Element {
           <EmptyState>Please select a publish topic in the panel settings</EmptyState>
         )}
 
-        {enabled && <DirectionalPad onAction={setCurrentAction} disabled={!enabled} />}
+        {/* {enabled && <DirectionalPad onAction={setCurrentAction} disabled={!enabled} />} */}
         {/* {enabled && <TeleopKeyboardFeature handleVehicleMovement={vehicleMotionChangeHandler} />}
         {enabled && <JoyStickController handleVehicleMovement={vehicleMotionChangeHandler} />} */}
         {enabled && <LogitechG29Controller handleVehicleMovement={vehicleMotionChangeHandler} />}
+
+        <Grid container spacing={2}>
+          <Grid item xs={6}>
+            <MetaInfoCard
+              theme={colorScheme}
+              title="Requested torque"
+              value={_linearVelocity * MAX_VEHICLE_SPEED}
+            />
+          </Grid>
+          <Grid item xs={6}>
+            <MetaInfoCard
+              theme={colorScheme}
+              title="Steering angle"
+              value={`${-_angularVelocity * 100}%`}
+            />
+          </Grid>
+        </Grid>
       </Stack>
     </ThemeProvider>
   );
