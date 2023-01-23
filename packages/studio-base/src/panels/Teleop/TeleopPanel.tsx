@@ -22,9 +22,7 @@ import {
   AUTOWARE_MSG,
   GEAR_CMD_ENUM,
 } from "@foxglove/studio-base/panels/Autoware/messages";
-import DirectionalPad, {
-  DirectionalPadAction,
-} from "@foxglove/studio-base/panels/Teleop/DirectionalPad";
+import { DirectionalPadAction } from "@foxglove/studio-base/panels/Teleop/DirectionalPad";
 // import JoyStickController from "@foxglove/studio-base/panels/Teleop/JoyStickController";
 // import TeleopKeyboardFeature from "@foxglove/studio-base/panels/Teleop/TeleopKeyboardFeature";
 import LogitechG29Controller from "@foxglove/studio-base/panels/Teleop/LogitechG29Controller";
@@ -394,8 +392,8 @@ function TeleopPanel(props: TeleopPanelProps): JSX.Element {
         )}
 
         {/* {enabled && <DirectionalPad onAction={setCurrentAction} disabled={!enabled} />} */}
-        {/* {enabled && <TeleopKeyboardFeature handleVehicleMovement={vehicleMotionChangeHandler} />}
-        {enabled && <JoyStickController handleVehicleMovement={vehicleMotionChangeHandler} />} */}
+        {/* {enabled && <TeleopKeyboardFeature handleVehicleMovement={vehicleMotionChangeHandler} />} */}
+        {/* {enabled && <JoyStickController handleVehicleMovement={vehicleMotionChangeHandler} />} */}
         {enabled && <LogitechG29Controller handleVehicleMovement={vehicleMotionChangeHandler} />}
 
         <Grid container spacing={2}>

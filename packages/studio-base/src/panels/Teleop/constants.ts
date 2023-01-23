@@ -2,8 +2,8 @@ export const ACCELERATION_SENSITIVITY = 1.4;
 export const TURNING_SENSITIVITY = 2;
 export const BREAK_SENSITIVITY = 2;
 
-export const REST_THRESHOLD = 0.2;
-export const BASE_KICKSTART_FROM_REST = 1;
+export const REST_THRESHOLD = 0.4;
+export const BASE_KICKSTART_FROM_REST = 0.2;
 
 export const FRONT_MAX_SPEED = 1;
 export const REVERSE_MAX_SPEED = -1;
